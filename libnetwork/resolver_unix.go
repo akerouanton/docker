@@ -56,19 +56,20 @@ func reexecSetupResolver() {
 
 	// TODO IPv6 support
 	var table firewallapi.FirewallTable
-	if err := nftables.InitCheck(); err != nil {
+	if err := nftables.InitCheck(); err == nil {
 		table = nftables.GetTable(nftables.IPv4)
 	} else {
 		table = iptables.GetTable(iptables.IPv4)
 	}
 
+	// insert outputChain and postroutingchain (if they don't exist yet).
 	table.AddJumpRuleForIP(firewallapi.Nat, "OUTPUT", outputChain, resolverIP)
-	table.AddJumpRuleForIP(firewallapi.Nat, "POSTROUTING", outputChain, resolverIP)
+	table.AddJumpRuleForIP(firewallapi.Nat, "POSTROUTING", postroutingchain, resolverIP)
 
-	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, "udp", dnsPort, os.Args[2])
-	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, "udp", ipPort, dnsPort)
-	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, "tcp", dnsPort, os.Args[3])
-	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, "tcp", tcpPort, dnsPort)
+	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, dnsPort, "udp", os.Args[2])
+	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, ipPort, "udp", dnsPort)
+	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, dnsPort, "tcp", os.Args[3])
+	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, tcpPort, "tcp", dnsPort)
 }
 
 func (r *resolver) setupIPTable() error {

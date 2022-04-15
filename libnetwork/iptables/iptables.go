@@ -162,7 +162,7 @@ func (iptable IPTable) NewChain(name string, table Table, hairpinMode bool) (fir
 		FirewallTable: iptable,
 	}
 	if string(c.GetTable()) == "" {
-		c.SetTable(Filter)
+		c.Table = Filter
 	}
 
 	// Add chain if it doesn't exist
@@ -298,7 +298,7 @@ func (iptable IPTable) RemoveExistingChain(name string, table Table) error {
 		FirewallTable: iptable,
 	}
 	if string(c.GetTable()) == "" {
-		c.SetTable(Filter)
+		c.Table = Filter
 	}
 	return c.Remove()
 }
@@ -310,6 +310,17 @@ func (c ChainInfo) DeleteRule(version IPVersion, table Table, chain string, rule
 		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Could not delete establish rule from %s: %s", c.GetTable(), output)
+	}
+	return nil
+}
+
+//DeleteRule passes down to a raw level since it's more complex in NFTables
+func (iptable IPTable) DeleteRule(version IPVersion, table Table, chain string, rule ...string) error {
+	del := append([]string{"-t", string(table), string(Delete), chain}, rule...)
+	if output, err := iptable.Raw(del...); err != nil {
+		return err
+	} else if len(output) != 0 {
+		return fmt.Errorf("Could not delete establish rule from %s: %s", iptable.Version, output)
 	}
 	return nil
 }
@@ -854,10 +865,10 @@ func (iptable IPTable) AddJumpRuleForIP(table Table, fromChain, toChain, ipaddr 
 
 //AddDNAT adds a dnat rule with a port
 func (iptable IPTable) AddDNATwithPort(table Table, chain, dstIP, dstPort, proto, natIP string) {
-	rule := []string{"-t", string(table), "-d", dstIP, "-p", proto, "--dport", dstPort, "-j", "DNAT", "--to-destination", natIP}
+	rule := []string{"-t", string(table), "-I", chain, "-d", dstIP, "-p", proto, "--dport", dstPort, "-j", "DNAT", "--to-destination", natIP}
 
-	if iptable.RawCombinedOutputNative(rule...) != nil {
-		logrus.Errorf("set up rule failed, %v", rule)
+	if err := iptable.RawCombinedOutputNative(rule...); err != nil {
+		logrus.Errorf("set up rule failed: %v", err)
 	}
 }
 
@@ -872,9 +883,10 @@ func (iptable IPTable) AddRedirect(table Table, chain, dstIP, dstPort, proto, na
 
 //AddSNAT adds a snat rule with a port
 func (iptable IPTable) ADDSNATwithPort(table Table, chain, srcIP, srcPort, proto, natPort string) {
-	rule := []string{"-t", string(table), "-s", srcIP, "-p", proto, "--sport", srcPort, "-j", "SNAT", "--to-source", ":" + natPort}
-	if iptable.RawCombinedOutputNative(rule...) != nil {
-		logrus.Errorf("set up rule failed, %v", rule)
+	rule := []string{"-t", string(table), "-I", chain, "-s", srcIP, "-p", proto, "--sport", srcPort, "-j", "SNAT", "--to-source", ":" + natPort}
+
+	if err := iptable.RawCombinedOutputNative(rule...); err != nil {
+		logrus.Errorf("set up rule failed: %v", err)
 	}
 }
 
@@ -922,15 +934,11 @@ func (iptable IPTable) GetAcceptPolicy() string {
 
 //Getters and setters for struct fields now that it's an interface
 func (c ChainInfo) GetName() string {
-	return c.GetName()
+	return c.Name
 }
 
 func (c ChainInfo) GetTable() Table {
-	return c.GetTable()
-}
-
-func (c ChainInfo) SetTable(t Table) {
-	c.SetTable(t)
+	return c.Table
 }
 
 func (c ChainInfo) GetHairpinMode() bool {
