@@ -6,6 +6,8 @@ package bridge
 import (
 	"errors"
 	"fmt"
+	"github.com/docker/docker/libnetwork/firewall"
+	"github.com/docker/docker/libnetwork/firewall/fwiptables"
 	"net"
 	"os"
 	"os/exec"
@@ -148,14 +150,14 @@ type bridgeNetwork struct {
 
 type driver struct {
 	config            *configuration
-	natChain          firewallapi.FirewallChain
+	/* natChain          firewallapi.FirewallChain
 	filterChain       firewallapi.FirewallChain
 	isolationChain1   firewallapi.FirewallChain
 	isolationChain2   firewallapi.FirewallChain
 	natChainV6        firewallapi.FirewallChain
 	filterChainV6     firewallapi.FirewallChain
 	isolationChain1V6 firewallapi.FirewallChain
-	isolationChain2V6 firewallapi.FirewallChain
+	isolationChain2V6 firewallapi.FirewallChain */
 	networks          map[string]*bridgeNetwork
 	store             datastore.DataStore
 	nlh               *netlink.Handle
@@ -288,7 +290,7 @@ func (n *bridgeNetwork) registerIptCleanFunc(clean tableCleanFunc) {
 	n.iptCleanFuncs = append(n.iptCleanFuncs, clean)
 }
 
-func (n *bridgeNetwork) getDriverChains(version iptables.IPVersion) (firewallapi.FirewallChain, firewallapi.FirewallChain, firewallapi.FirewallChain, firewallapi.FirewallChain, error) {
+/* func (n *bridgeNetwork) getDriverChains(version iptables.IPVersion) (firewallapi.FirewallChain, firewallapi.FirewallChain, firewallapi.FirewallChain, firewallapi.FirewallChain, error) {
 	n.Lock()
 	defer n.Unlock()
 
@@ -301,7 +303,7 @@ func (n *bridgeNetwork) getDriverChains(version iptables.IPVersion) (firewallapi
 	}
 
 	return n.driver.natChain, n.driver.filterChain, n.driver.isolationChain1, n.driver.isolationChain2, nil
-}
+} */
 
 func (n *bridgeNetwork) getNetworkBridgeName() string {
 	n.Lock()
@@ -337,32 +339,31 @@ func (n *bridgeNetwork) isolateNetwork(enable bool) error {
 		return nil
 	}
 
-	// Install the rules to isolate this network against each of the other networks
-	if n.driver.config.EnableIP6Tables {
-		err := setINC(iptables.IPv6, thisConfig.BridgeName, enable)
-		if err != nil {
-			return err
-		}
+	fw := fwiptables.New()
+	fwMode := firewall.ModeFromBools(
+		n.driver.config.EnableIPTables,
+		n.driver.config.EnableIP6Tables)
+
+	if !enable {
+		return fw.RemoveInterNetworkConnectivity(fwMode, thisConfig.BridgeName)
 	}
 
-	if n.driver.config.EnableIPTables {
-		return setINC(iptables.IPv4, thisConfig.BridgeName, enable)
-	}
-	return nil
+	return fw.AddInterNetworkConnectivity(fwMode, thisConfig.BridgeName)
 }
 
 func (d *driver) configure(option map[string]interface{}) error {
 	var (
 		config            *configuration
 		err               error
-		natChain          firewallapi.FirewallChain
+		// TODO(aker): remove these chains
+		/* natChain          firewallapi.FirewallChain
 		filterChain       firewallapi.FirewallChain
 		isolationChain1   firewallapi.FirewallChain
 		isolationChain2   firewallapi.FirewallChain
 		natChainV6        firewallapi.FirewallChain
 		filterChainV6     firewallapi.FirewallChain
 		isolationChain1V6 firewallapi.FirewallChain
-		isolationChain2V6 firewallapi.FirewallChain
+		isolationChain2V6 firewallapi.FirewallChain */
 	)
 
 	genericData, ok := option[netlabel.GenericData]
@@ -411,12 +412,13 @@ func (d *driver) configure(option map[string]interface{}) error {
 		}
 
 		// Make sure on firewall reload, first thing being re-played is chains creation
-		firewalld.OnReloaded(func() {
+		// TODO(aker): redesign how firewalld hooks are called
+		/* firewalld.OnReloaded(func() {
 			logrus.Debugf("Recreating iptables chains on firewall reload")
 			if _, _, _, _, err := setupIPChains(config, iptables.IPv4); err != nil {
 				logrus.WithError(err).Error("Error reloading iptables chains")
 			}
-		})
+		}) */
 	}
 
 	if config.EnableIP6Tables {
@@ -428,12 +430,13 @@ func (d *driver) configure(option map[string]interface{}) error {
 		}
 
 		// Make sure on firewall reload, first thing being re-played is chains creation
-		firewalld.OnReloaded(func() {
+		// TODO(aker): redesign how firewalld hooks are called
+		/* firewalld.OnReloaded(func() {
 			logrus.Debugf("Recreating ip6tables chains on firewall reload")
 			if _, _, _, _, err := setupIPChains(config, iptables.IPv6); err != nil {
 				logrus.WithError(err).Error("Error reloading ip6tables chains")
 			}
-		})
+		}) */
 	}
 
 	if config.EnableIPForwarding {
@@ -445,14 +448,15 @@ func (d *driver) configure(option map[string]interface{}) error {
 	}
 
 	d.Lock()
-	d.natChain = natChain
+	// TODO(aker): remove these lines
+	/* d.natChain = natChain
 	d.filterChain = filterChain
 	d.isolationChain1 = isolationChain1
 	d.isolationChain2 = isolationChain2
 	d.natChainV6 = natChainV6
 	d.filterChainV6 = filterChainV6
 	d.isolationChain1V6 = isolationChain1V6
-	d.isolationChain2V6 = isolationChain2V6
+	d.isolationChain2V6 = isolationChain2V6 */
 	d.config = config
 	d.Unlock()
 

@@ -3,6 +3,8 @@ package bridge
 import (
 	"errors"
 	"fmt"
+	"github.com/docker/docker/libnetwork/firewall"
+	"github.com/docker/docker/libnetwork/firewall/fwiptables"
 	"net"
 
 	"github.com/docker/docker/libnetwork/conntrack"
@@ -310,8 +312,24 @@ func setupIPTablesInternal(hostIP net.IP, bridgeIface string, addr *net.IPNet, i
 		}
 	}
 
-	// Set Inter Container Communication.
-	if err := setIcc(ipVersion, bridgeIface, icc, enable); err != nil {
+	fw := fwiptables.New()
+	var fwMode firewall.Mode
+	if addr.IP.To4() != nil {
+		fwMode = firewall.IPv4
+	} else {
+		fwMode = firewall.IPv6
+	}
+
+	var err error
+	if enable && icc {
+		err = fw.AllowICC(fwMode, bridgeIface)
+	} else if enable && !icc {
+		err = fw.DenyICC(fwMode, bridgeIface)
+	} else {
+		err = fw.CleanupICC(fwMode, bridgeIface)
+	}
+
+	if err != nil {
 		return err
 	}
 
@@ -361,111 +379,6 @@ func programChainRule(version firewallapi.IPVersion, rule firewallRule, ruleDesc
 	return nil
 }
 
-func setIcc(version firewallapi.IPVersion, bridgeIface string, iccEnable, insert bool) error {
-	fwtable, nftablesEnabled := getFirewallTableImplementationByVersion(version)
-
-	var (
-		table      = firewallapi.Filter
-		chain      = "FORWARD"
-		args       = []string{}
-		acceptArgs = []string{}
-		dropArgs   = []string{}
-	)
-
-	if nftablesEnabled {
-		args = []string{"iifname", bridgeIface, "oifname", bridgeIface}
-		acceptArgs = append(args, "accept")
-		dropArgs = append(args, "drop")
-	} else {
-		args = []string{"-i", bridgeIface, "-o", bridgeIface, "-j"}
-		acceptArgs = append(args, "ACCEPT")
-		dropArgs = append(args, "DROP")
-	}
-
-	if insert {
-		if !iccEnable {
-			fwtable.DeleteRule(version, table, chain, acceptArgs...)
-
-			if !fwtable.Exists(table, chain, dropArgs...) {
-				if err := fwtable.ProgramRule(table, chain, firewallapi.Action(fwtable.GetAppendAction()), dropArgs); err != nil {
-					return fmt.Errorf("Unable to prevent intercontainer communication: %s", err.Error())
-				}
-			}
-		} else {
-			fwtable.DeleteRule(version, table, chain, dropArgs...)
-
-			if !fwtable.Exists(table, chain, acceptArgs...) {
-				if err := fwtable.ProgramRule(table, chain, firewallapi.Action(fwtable.GetInsertAction()), acceptArgs); err != nil {
-					return fmt.Errorf("Unable to allow intercontainer communication: %s", err.Error())
-				}
-			}
-		}
-	} else {
-		// Remove any ICC rule.
-		if !iccEnable {
-			if fwtable.Exists(table, chain, dropArgs...) {
-				fwtable.Raw(append([]string{"-D", chain}, dropArgs...)...)
-			}
-		} else {
-			if fwtable.Exists(table, chain, acceptArgs...) {
-				fwtable.Raw(append([]string{"-D", chain}, acceptArgs...)...)
-			}
-		}
-	}
-
-	return nil
-}
-
-// Control Inter Network Communication. Install[Remove] only if it is [not] present.
-func setINC(version firewallapi.IPVersion, iface string, enable bool) error {
-	table, nftablesEnabled := getFirewallTableImplementationByVersion(version)
-	var (
-		action    = firewallapi.Action(table.GetInsertAction())
-		actionMsg = "add"
-		chains    = []string{IsolationChain1, IsolationChain2}
-		rules     = [][]string{
-			{"-i", iface, "!", "-o", iface, "-j", IsolationChain2},
-			{"-o", iface, "-j", "DROP"},
-		}
-	)
-
-	if !enable {
-		action = firewallapi.Action(table.GetDeleteAction())
-		actionMsg = "remove"
-	}
-
-	if nftablesEnabled {
-		rules = [][]string{
-			{"iifname", iface, "oifname", "!=", iface, "jump", IsolationChain1},
-			{"oifname", iface, "drop"},
-		}
-	}
-
-	for i, chain := range chains {
-		var err error
-		if !enable {
-			err = table.DeleteRule(version, firewallapi.Filter, chain, rules[i]...)
-		} else {
-			err = table.ProgramRule(firewallapi.Filter, chain, action, rules[i])
-		}
-		if err != nil {
-			msg := fmt.Sprintf("unable to %s inter-network communication rule: %v", actionMsg, err)
-			if enable {
-				if i == 1 {
-					// Rollback the rule installed on first chain
-					if err2 := table.ProgramRule(firewallapi.Filter, chains[0], iptables.Delete, rules[0]); err2 != nil {
-						logrus.Warnf("Failed to rollback firewall rule after failure (%v): %v", err, err2)
-					}
-				}
-				return fmt.Errorf(msg)
-			}
-			logrus.Warn(msg)
-		}
-	}
-
-	return nil
-}
-
 // Obsolete chain from previous docker versions
 const oldIsolationChain = "DOCKER-ISOLATION"
 
@@ -508,8 +421,22 @@ func setupInternalNetworkRules(bridgeIface string, addr *net.IPNet, icc, insert 
 	if err := programChainRule(version, outDropRule, "DROP OUTGOING", insert); err != nil {
 		return err
 	}
-	// Set Inter Container Communication.
-	return setIcc(version, bridgeIface, icc, insert)
+
+	var fwMode firewall.Mode
+	if addr.IP.To4() != nil {
+		fwMode = firewall.IPv4
+	} else {
+		fwMode = firewall.IPv6
+	}
+
+	fw := fwiptables.New()
+	if insert && icc {
+		return fw.AllowICC(fwMode, bridgeIface)
+	} else if insert && !icc {
+		return fw.DenyICC(fwMode, bridgeIface)
+	} else {
+		return fw.CleanupICC(fwMode, bridgeIface)
+	}
 }
 
 func clearEndpointConnections(nlh *netlink.Handle, ep *bridgeEndpoint) {
@@ -548,6 +475,7 @@ func getFirewallTableImplementationByAddr(addr *net.IPNet) (firewallapi.Firewall
 	return table, version, nftablesEnabled
 }
 
+// TODO(aker): to be removed
 func getFirewallTableImplementationByVersion(version firewallapi.IPVersion) (firewallapi.FirewallTable, bool) {
 	var table firewallapi.FirewallTable
 	var nftablesEnabled bool

@@ -5,14 +5,13 @@ package libnetwork
 
 import (
 	"fmt"
+	"github.com/docker/docker/libnetwork/firewall"
+	"github.com/docker/docker/libnetwork/firewall/fwiptables"
 	"net"
 	"os"
 	"os/exec"
 	"runtime"
 
-	"github.com/docker/docker/libnetwork/firewallapi"
-	"github.com/docker/docker/libnetwork/iptables"
-	"github.com/docker/docker/libnetwork/nftables"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netns"
@@ -38,7 +37,7 @@ func reexecSetupResolver() {
 		os.Exit(1)
 	}
 
-	resolverIP, ipPort, _ := net.SplitHostPort(os.Args[2])
+	resolverIP, udpPort, _ := net.SplitHostPort(os.Args[2])
 	_, tcpPort, _ := net.SplitHostPort(os.Args[3])
 
 	f, err := os.OpenFile(os.Args[1], os.O_RDONLY, 0)
@@ -55,20 +54,13 @@ func reexecSetupResolver() {
 	}
 
 	// TODO IPv6 support
-	var table firewallapi.FirewallTable
-	if err := nftables.InitCheck(); err == nil {
-		table = nftables.GetTable(nftables.IPv4)
-	} else {
-		table = iptables.GetTable(iptables.IPv4)
+	fw := fwiptables.New()
+	if err := fw.AddResolverConnectivity(firewall.UDP, dnsPort, resolverIP, udpPort); err != nil {
+		logrus.Errorf("could not add UDP resolver connectivity: %v", err)
 	}
-
-	table.AddJumpRuleForIP(firewallapi.Nat, "OUTPUT", outputChain, resolverIP)
-	table.AddJumpRuleForIP(firewallapi.Nat, "POSTROUTING", outputChain, resolverIP)
-
-	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, "udp", dnsPort, os.Args[2])
-	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, "udp", ipPort, dnsPort)
-	table.AddDNATwithPort(firewallapi.Nat, outputChain, resolverIP, "tcp", dnsPort, os.Args[3])
-	table.ADDSNATwithPort(firewallapi.Nat, postroutingchain, resolverIP, "tcp", tcpPort, dnsPort)
+	if err := fw.AddResolverConnectivity(firewall.TCP, dnsPort, resolverIP, tcpPort); err != nil {
+		logrus.Errorf("could not add TCP resolver connectivity: %v", err)
+	}
 }
 
 func (r *resolver) setupIPTable() error {
