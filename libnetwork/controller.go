@@ -1314,10 +1314,6 @@ func (c *controller) nftablesEnabled() bool {
 	if !ok {
 		return false
 	}
-	enabled, ok := cfgGeneric["EnableNFTables"].(bool)
-	if !ok {
-		// unless user explicitly stated, assume iptable is enabled
-		enabled = true
-	}
+	enabled, _ := cfgGeneric["EnableNFTables"].(bool)
 	return enabled
 }

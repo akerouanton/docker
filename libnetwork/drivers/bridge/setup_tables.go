@@ -320,13 +320,7 @@ func setupIPTablesInternal(hostIP net.IP, bridgeIface string, addr *net.IPNet, i
 }
 
 func programChainRule(version firewallapi.IPVersion, rule firewallRule, ruleDescr string, insert bool) error {
-	var table firewallapi.FirewallTable
-	var nftablesEnabled bool
-	if err := nftables.InitCheck(); err != nil {
-		table = nftables.GetTable(version)
-	} else {
-		table = iptables.GetTable(version)
-	}
+	table, nftablesEnabled := getFirewallTableImplementationByVersion(version)
 
 	var (
 		prefix    []string
@@ -477,7 +471,7 @@ const oldIsolationChain = "DOCKER-ISOLATION"
 
 func removeIPChains(version firewallapi.IPVersion) {
 	var table firewallapi.FirewallTable
-	if err := nftables.InitCheck(); err != nil {
+	if err := nftables.InitCheck(); err == nil {
 		table = nftables.GetTable(version)
 		// Remove obsolete rules from default chain
 		table.DeleteRule(version, firewallapi.Filter, "FORWARD", "jump", oldIsolationChain)
@@ -534,7 +528,7 @@ func getFirewallTableImplementationByAddr(addr *net.IPNet) (firewallapi.Firewall
 	var table firewallapi.FirewallTable
 	var version firewallapi.IPVersion
 	var nftablesEnabled bool
-	if err := nftables.InitCheck(); err != nil {
+	if err := nftables.InitCheck(); err == nil {
 		if addr.IP.To4() == nil {
 			version = nftables.IPv6
 		} else {
@@ -557,11 +551,10 @@ func getFirewallTableImplementationByAddr(addr *net.IPNet) (firewallapi.Firewall
 func getFirewallTableImplementationByVersion(version firewallapi.IPVersion) (firewallapi.FirewallTable, bool) {
 	var table firewallapi.FirewallTable
 	var nftablesEnabled bool
-	if err := nftables.InitCheck(); err != nil {
+	if err := nftables.InitCheck(); err == nil {
 		table = nftables.GetTable(version)
 		nftablesEnabled = true
 	} else {
-
 		table = iptables.GetTable(version)
 		nftablesEnabled = false
 	}

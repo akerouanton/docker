@@ -49,10 +49,7 @@ type FirewallTable interface {
 	ProgramRule(table Table, chain string, action Action, args []string) error
 	Exists(table Table, chain string, rule ...string) bool
 	ExistsNative(table Table, chain string, rule ...string) bool
-	exists(native bool, table Table, chain string, rule ...string) bool
-	existsRaw(table Table, chain string, rule ...string) bool
 	Raw(args ...string) ([]byte, error)
-	raw(args ...string) ([]byte, error)
 	RawCombinedOutput(args ...string) error
 	RawCombinedOutputNative(args ...string) error
 	ExistChain(chain string, table Table) bool
@@ -90,7 +87,6 @@ type FirewallChain interface {
 	Remove() error
 	GetName() string
 	GetTable() Table
-	SetTable(Table)
 	GetHairpinMode() bool
 	GetFirewallTable() FirewallTable
 }

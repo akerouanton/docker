@@ -162,7 +162,7 @@ func (iptable IPTable) NewChain(name string, table Table, hairpinMode bool) (fir
 		FirewallTable: iptable,
 	}
 	if string(c.GetTable()) == "" {
-		c.SetTable(Filter)
+		c.Table = Filter
 	}
 
 	// Add chain if it doesn't exist
@@ -298,7 +298,7 @@ func (iptable IPTable) RemoveExistingChain(name string, table Table) error {
 		FirewallTable: iptable,
 	}
 	if string(c.GetTable()) == "" {
-		c.SetTable(Filter)
+		c.Table = Filter
 	}
 	return c.Remove()
 }
@@ -310,6 +310,17 @@ func (c ChainInfo) DeleteRule(version IPVersion, table Table, chain string, rule
 		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Could not delete establish rule from %s: %s", c.GetTable(), output)
+	}
+	return nil
+}
+
+//DeleteRule passes down to a raw level since it's more complex in NFTables
+func (iptable IPTable) DeleteRule(version IPVersion, table Table, chain string, rule ...string) error {
+	del := append([]string{"-t", string(table), string(Delete), chain}, rule...)
+	if output, err := iptable.Raw(del...); err != nil {
+		return err
+	} else if len(output) != 0 {
+		return fmt.Errorf("Could not delete establish rule from %s: %s", iptable.Version, output)
 	}
 	return nil
 }
@@ -922,15 +933,11 @@ func (iptable IPTable) GetAcceptPolicy() string {
 
 //Getters and setters for struct fields now that it's an interface
 func (c ChainInfo) GetName() string {
-	return c.GetName()
+	return c.Name
 }
 
 func (c ChainInfo) GetTable() Table {
-	return c.GetTable()
-}
-
-func (c ChainInfo) SetTable(t Table) {
-	c.SetTable(t)
+	return c.Table
 }
 
 func (c ChainInfo) GetHairpinMode() bool {

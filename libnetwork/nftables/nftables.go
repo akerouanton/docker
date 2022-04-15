@@ -143,7 +143,7 @@ func (nftable NFTable) NewChain(name string, table Table, hairpinMode bool) (fir
 	}
 
 	if string(c.GetTable()) == "" {
-		c.SetTable(Table(firewallapi.Filter))
+		c.Table = Table(firewallapi.Filter)
 	}
 
 	// Add chain if it doesn't exist
@@ -274,7 +274,7 @@ func (nftable NFTable) RemoveExistingChain(name string, table Table) error {
 		FirewallTable: nftable,
 	}
 	if string(c.GetTable()) == "" {
-		c.SetTable(Filter)
+		c.Table = Filter
 	}
 	return c.Remove()
 }
@@ -899,15 +899,11 @@ func (nftable NFTable) GetAcceptPolicy() string {
 }
 
 func (c ChainInfo) GetName() string {
-	return c.GetName()
+	return c.Name
 }
 
 func (c ChainInfo) GetTable() Table {
-	return c.GetTable()
-}
-
-func (c ChainInfo) SetTable(t Table) {
-	c.Table = t
+	return c.Table
 }
 
 func (c ChainInfo) GetHairpinMode() bool {
