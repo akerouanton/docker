@@ -190,6 +190,7 @@ func ParseAlias(val string) (string, string, error) {
 }
 
 // ValidateAlias validates that the specified string has a valid alias format (containerName:alias).
+// TODO: unused -- to be removed
 func ValidateAlias(val string) (string, error) {
 	if _, _, err := ParseAlias(val); err != nil {
 		return val, err
