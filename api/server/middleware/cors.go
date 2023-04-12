@@ -11,12 +11,14 @@ import (
 // CORSMiddleware injects CORS headers to each request
 // when it's configured.
 //
-// CORSMiddleware is deprecated and will be removed in a future version.
+// Deprecated: CORS headers should not be set on the API, and this feature will be removed in the next release.
 type CORSMiddleware struct {
 	defaultHeaders string
 }
 
 // NewCORSMiddleware creates a new CORSMiddleware with default headers.
+//
+// Deprecated: CORS headers should not be set on the API, and this feature will be removed in the next release.
 func NewCORSMiddleware(d string) CORSMiddleware {
 	return CORSMiddleware{defaultHeaders: d}
 }
