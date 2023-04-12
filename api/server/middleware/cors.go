@@ -10,6 +10,8 @@ import (
 
 // CORSMiddleware injects CORS headers to each request
 // when it's configured.
+//
+// CORSMiddleware is deprecated and will be removed in a future version.
 type CORSMiddleware struct {
 	defaultHeaders string
 }
