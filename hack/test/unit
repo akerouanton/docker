@@ -28,8 +28,25 @@ echo "${libnetwork_pkg_list}" | grep --fixed-strings "libnetwork/drivers/bridge"
 
 mkdir -p bundles
 
+gotestsum="/usr/local/bin/gotestsum"
+
+if [ -n "${TEST_ENABLE_DELVE:-}" ] && [ -n "$DELVE_PORT" ]; then
+  echo ${DELVE_PORT}
+  delve_listen_port="${DELVE_PORT##*:}"
+	gotestsum="
+		dlv
+		--listen=0.0.0.0:$delve_listen_port
+		--headless=true
+		--log
+		--api-version=2
+		--only-same-user=false
+		--check-go-version=false
+		--accept-multiclient
+		exec ${gotestsum} --"
+fi
+
 if [ -n "${base_pkg_list}" ]; then
-	gotestsum --format=standard-quiet --jsonfile=bundles/go-test-report.json --junitfile=bundles/junit-report.xml -- \
+	${gotestsum} --format=standard-quiet --jsonfile=bundles/go-test-report.json --junitfile=bundles/junit-report.xml -- \
 		"${BUILDFLAGS[@]}" \
 		-cover \
 		-coverprofile=bundles/coverage.out \
@@ -41,7 +58,7 @@ if [ -n "${libnetwork_pkg_list}" ]; then
 	# libnetwork tests invoke iptables, and cannot be run in parallel. Execute
 	# tests within /libnetwork with '-p=1' to run them sequentially. See
 	# https://github.com/moby/moby/issues/42458#issuecomment-873216754 for details.
-	gotestsum --format=standard-quiet --jsonfile=bundles/go-test-report-libnetwork.json --junitfile=bundles/junit-report-libnetwork.xml -- \
+	${gotestsum} --format=standard-quiet --jsonfile=bundles/go-test-report-libnetwork.json --junitfile=bundles/junit-report-libnetwork.xml -- \
 		"${BUILDFLAGS[@]}" \
 		-cover \
 		-coverprofile=bundles/coverage-libnetwork.out \

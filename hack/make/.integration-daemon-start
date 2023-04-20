@@ -66,13 +66,28 @@ if [ "$DOCKER_EXPERIMENTAL" ]; then
 	extra_params="$extra_params --experimental"
 fi
 
-dockerd="dockerd"
-if [ -f "/sys/fs/cgroup/cgroup.controllers" ]; then
-	if [ -z "$TEST_SKIP_INTEGRATION_CLI" ]; then
-		echo >&2 '# cgroup v2 requires TEST_SKIP_INTEGRATION_CLI to be set'
-		exit 1
-	fi
+dockerd="/usr/local/bin/dockerd"
+
+if [ -n "${TEST_INTEGRATION_ENABLE_DELVE}" ] && [ -n "$DELVE_PORT" ]; then
+  delve_listen_port="${DELVE_PORT##*:}"
+	dockerd="
+		dlv
+		--listen='0.0.0.0:$delve_listen_port'
+		--headless=true
+		--log
+		--api-version=2
+		--only-same-user=false
+		--check-go-version=false
+		--accept-multiclient
+		exec ${dockerd[@]} --"
 fi
+
+# if [ -f "/sys/fs/cgroup/cgroup.controllers" ]; then
+# 	if [ -z "$TEST_SKIP_INTEGRATION_CLI" ]; then
+# 		echo >&2 '# cgroup v2 requires TEST_SKIP_INTEGRATION_CLI to be set'
+# 		exit 1
+# 	fi
+# fi
 
 if [ -n "$DOCKER_ROOTLESS" ]; then
 	if [ -z "$TEST_SKIP_INTEGRATION_CLI" ]; then
@@ -106,7 +121,7 @@ if [ -z "$DOCKER_TEST_HOST" ]; then
 		echo "Starting dockerd"
 		[ -n "$TESTDEBUG" ] && set -x
 		exec \
-			${dockerd} --debug \
+			${dockerd[@]} --debug \
 			--host "$DOCKER_HOST" \
 			--storage-driver "$DOCKER_GRAPHDRIVER" \
 			--pidfile "$DEST/docker.pid" \
