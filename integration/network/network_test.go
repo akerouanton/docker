@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	ntypes "github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/integration/internal/container"
 	"github.com/docker/docker/integration/internal/network"
 	"github.com/docker/docker/testutil/daemon"
@@ -248,4 +249,24 @@ func TestDefaultNetworkOpts(t *testing.T) {
 			assert.Check(t, is.Contains(result.Combined(), fmt.Sprintf(" mtu %d ", tc.mtu)), "Network MTU should have been set to %d", tc.mtu)
 		})
 	}
+}
+
+func TestNetworkWithInvalidIPAM(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows")
+	skip.If(t, testEnv.IsRemoteDaemon)
+
+	d := daemon.New(t)
+	d.Start(t)
+	defer d.Stop(t)
+	c := d.NewClientT(t)
+	defer c.Close()
+	ctx := context.Background()
+
+	_, err := c.NetworkCreate(ctx, "invalid-ipam", types.NetworkCreate{
+		IPAM: &ntypes.IPAM{
+			Config: []ntypes.IPAMConfig{{Subnet: "foobar"}},
+		},
+	})
+	assert.Check(t, errdefs.IsInvalidParameter(err))
+	assert.ErrorContains(t, err, "foobar is an invalid prefix")
 }

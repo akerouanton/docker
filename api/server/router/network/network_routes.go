@@ -2,7 +2,9 @@ package network // import "github.com/docker/docker/api/server/router/network"
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/libnetwork"
 	netconst "github.com/docker/docker/libnetwork/datastore"
+	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 )
 
@@ -216,16 +219,28 @@ func (n *networkRouter) postNetworkCreate(ctx context.Context, w http.ResponseWr
 		return nameConflict(create.Name)
 	}
 
+	// Prior to v1.44, the API was not validating IPAM parameters (ie. this endpoint never returned a 400). This was
+	// partially handled by the CLI, but not all cases were not covered. To not break compatibility, we now return
+	// warnings for these older versions, and hard errors for newer versions.
+	warnings := make([]string, 0)
+	if errs := validateIPAM(create.IPAM, create.EnableIPv6); errs != nil {
+		if versions.GreaterThanOrEqualTo(httputils.VersionFromContext(ctx), "1.44") {
+			return errdefs.InvalidParameter(errs)
+		}
+		for _, err := range errs.WrappedErrors() {
+			warnings = append(warnings, err.Error())
+		}
+	}
+
 	nw, err := n.backend.CreateNetwork(create)
 	if err != nil {
-		var warning string
 		if _, ok := err.(libnetwork.NetworkNameError); ok {
 			// check if user defined CheckDuplicate, if set true, return err
 			// otherwise prepare a warning message
 			if create.CheckDuplicate {
 				return nameConflict(create.Name)
 			}
-			warning = libnetwork.NetworkNameError(create.Name).Error()
+			warnings = append(warnings, libnetwork.NetworkNameError(create.Name).Error())
 		}
 
 		if _, ok := err.(libnetwork.ManagerRedirectError); !ok {
@@ -237,11 +252,117 @@ func (n *networkRouter) postNetworkCreate(ctx context.Context, w http.ResponseWr
 		}
 		nw = &types.NetworkCreateResponse{
 			ID:      id,
-			Warning: warning,
+			Warning: strings.Join(warnings, " ; "),
 		}
 	}
 
 	return httputils.WriteJSON(w, http.StatusCreated, nw)
+}
+
+type ipFamily int
+
+const (
+	ip4 ipFamily = 4
+	ip6          = 6
+)
+
+func addrFamily(addr netip.Addr) ipFamily {
+	if addr.Is4() {
+		return ip4
+	}
+	return ip6
+}
+
+func validateIPAM(ipam *network.IPAM, enableIPv6 bool) *multierror.Error {
+	var errs *multierror.Error
+	for _, cfg := range ipam.Config {
+		subnet, err := netip.ParsePrefix(cfg.Subnet)
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("subnet %q is an invalid prefix", cfg.Subnet))
+			continue
+		}
+		subnetFamily := ip4
+		if subnet.Addr().Is6() {
+			subnetFamily = ip6
+		}
+
+		if !enableIPv6 && subnetFamily == ip6 {
+			errs = multierror.Append(errs,
+				errors.New("IPv6 has not been enabled for this network, but an IPv6 subnet has been provided"))
+		}
+
+		if cfg.IPRange != "" {
+			err := validateIPRange(cfg.IPRange, subnet, subnetFamily)
+			errs = multierror.Append(errs, err)
+		}
+
+		if cfg.Gateway != "" {
+			errs = multierror.Append(errs, validateGateway(cfg.Gateway, subnet, subnetFamily))
+		}
+
+		for auxName, aux := range cfg.AuxAddress {
+			errs = multierror.Append(errs, validateAuxAddress(aux, auxName, subnet, subnetFamily))
+		}
+	}
+
+	return errs
+}
+
+func validateIPRange(ipRange string, subnet netip.Prefix, subnetFamily ipFamily) error {
+	prefix, err := netip.ParsePrefix(ipRange)
+	if err != nil {
+		return fmt.Errorf("ip-range %q is an invalid prefix", ipRange)
+	}
+	family := addrFamily(prefix.Addr())
+
+	if family != subnetFamily {
+		err = fmt.Errorf("ip-range %s is an IPv%d block whereas it's associated to an IPv%d subnet",
+			ipRange, family, subnetFamily)
+	} else {
+		if prefix.Bits() < subnet.Bits() {
+			err = multierror.Append(err,
+				fmt.Errorf("ip-range %s is bigger than its associated subnet", ipRange))
+		}
+		if !subnet.Overlaps(prefix) {
+			err = multierror.Append(err, fmt.Errorf("subnet doesn't contain ip-range %s", ipRange))
+		}
+	}
+
+	return err
+}
+
+func validateGateway(gateway string, subnet netip.Prefix, subnetFamily ipFamily) error {
+	addr, err := netip.ParseAddr(gateway)
+	if err != nil {
+		return fmt.Errorf("gateway %q is an invalid address", gateway)
+	}
+	family := addrFamily(addr)
+
+	if family != subnetFamily {
+		return fmt.Errorf("gateway %s is an IPv%d address whereas it's associated to an IPv%d subnet block",
+			gateway, family, subnetFamily)
+	} else if !subnet.Contains(addr) {
+		return fmt.Errorf("subnet doesn't contain gateway %s", gateway)
+	}
+
+	return nil
+}
+
+func validateAuxAddress(aux, auxName string, subnet netip.Prefix, subnetFamily ipFamily) error {
+	addr, err := netip.ParseAddr(aux)
+	if err != nil {
+		return fmt.Errorf("auxiliary address %q is an invalid address", aux)
+	}
+	family := addrFamily(addr)
+
+	if family != subnetFamily {
+		return fmt.Errorf("auxiliary address %s is an IPv%d address whereas it's associated to an IPv%d subnet",
+			auxName, family, subnetFamily)
+	} else if !subnet.Contains(addr) {
+		return fmt.Errorf("subnet doesn't contain auxiliary address %s", aux)
+	}
+
+	return nil
 }
 
 func (n *networkRouter) postNetworkConnect(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
