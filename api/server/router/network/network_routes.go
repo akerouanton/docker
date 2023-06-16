@@ -221,9 +221,7 @@ func (n *networkRouter) postNetworkCreate(ctx context.Context, w http.ResponseWr
 
 	warnings := make([]string, 0)
 	if errs := validateIPAM(create.IPAM, create.EnableIPv6); errs.ErrorOrNil() != nil {
-		for _, err := range errs.WrappedErrors() {
-			warnings = append(warnings, err.Error())
-		}
+		return errdefs.InvalidParameter(errs)
 	}
 
 	nw, err := n.backend.CreateNetwork(create)
@@ -317,9 +315,7 @@ func validateIPRange(ipRange string, subnet netip.Prefix, subnetFamily ipFamily)
 			ipRange, family, subnetFamily)
 	} else {
 		if prefix.Bits() < subnet.Bits() {
-			err = multierror.Append(err, fmt.Errorf(
-				"ip-range %s is bigger than its associated subnet; it will be ignored by the IPAM allocator",
-				ipRange))
+			err = multierror.Append(err, fmt.Errorf("ip-range %s is bigger than its associated subnet", ipRange))
 		}
 		if prefix != prefix.Masked() {
 			err = multierror.Append(err, fmt.Errorf("ip-range %s has some bits set in its host fragment", prefix))
