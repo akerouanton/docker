@@ -5,6 +5,7 @@ import (
 
 	types "github.com/docker/docker/api/types/network"
 	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestNetworkWithInvalidIPAM(t *testing.T) {
@@ -25,9 +26,9 @@ func TestNetworkWithInvalidIPAM(t *testing.T) {
 				}},
 			},
 			expectedErrors: []string{
-				"ip-range 2001:db8::/32 is an IPv6 block whereas it's associated to an IPv4 subnet",
-				"gateway 2001:db8::1 is an IPv6 address whereas it's associated to an IPv4 subnet",
-				"auxiliary address DefaultGatewayIPv4 is an IPv6 address whereas it's associated to an IPv4 subnet",
+				"invalid ip-range: ip-range 2001:db8::/32 is an IPv6 block whereas it's associated to an IPv4 subnet",
+				"invalid gateway: address (2001:db8::1) is an IPv6 address whereas it's associated to an IPv4 subnet",
+				"invalid auxiliary address DefaultGatewayIPv4: address (2001:db8::1) is an IPv6 address whereas it's associated to an IPv4 subnet",
 			},
 		},
 		{
@@ -40,7 +41,7 @@ func TestNetworkWithInvalidIPAM(t *testing.T) {
 			name: "Invalid data - Subnet",
 			ipam: types.IPAM{Config: []types.IPAMConfig{{Subnet: "foobar"}}},
 			expectedErrors: []string{
-				"subnet \"foobar\" is an invalid prefix",
+				`subnet "foobar" is an invalid prefix`,
 			},
 		},
 		{
@@ -54,9 +55,9 @@ func TestNetworkWithInvalidIPAM(t *testing.T) {
 				}},
 			},
 			expectedErrors: []string{
-				"ip-range \"foobar\" is an invalid prefix",
-				"gateway \"barbaz\" is an invalid address",
-				"auxiliary address \"dummy\" is an invalid address",
+				`invalid ip-range: ip-range "foobar" is an invalid prefix`,
+				`invalid gateway: invalid address: ParseAddr("barbaz"): unable to parse IP`,
+				`invalid auxiliary address DefaultGatewayIPv4: invalid address: ParseAddr("dummy"): unable to parse IP`,
 			},
 		},
 		{
@@ -81,9 +82,10 @@ func TestNetworkWithInvalidIPAM(t *testing.T) {
 				}},
 			},
 			expectedErrors: []string{
+				"ip-range 192.168.0.1/24 has some bits set in its host fragment",
 				"subnet doesn't contain ip-range 192.168.0.1/24",
-				"subnet doesn't contain gateway 192.168.0.1",
-				"subnet doesn't contain auxiliary address 192.168.0.1",
+				"invalid gateway: address (192.168.0.1) is outside of subnet (10.0.0.0/8)",
+				"invalid auxiliary address DefaultGatewayIPv4: address (192.168.0.1) is outside of subnet (10.0.0.0/8)",
 			},
 		},
 		{
@@ -114,7 +116,7 @@ func TestNetworkWithInvalidIPAM(t *testing.T) {
 
 			errs := validateIPAM(&tc.ipam, tc.ipv6)
 			for _, err := range tc.expectedErrors {
-				assert.ErrorContains(t, errs, err)
+				assert.Check(t, is.ErrorContains(errs, err))
 			}
 		})
 	}

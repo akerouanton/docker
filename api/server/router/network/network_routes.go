@@ -2,7 +2,6 @@ package network // import "github.com/docker/docker/api/server/router/network"
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -219,9 +218,9 @@ func (n *networkRouter) postNetworkCreate(ctx context.Context, w http.ResponseWr
 		return nameConflict(create.Name)
 	}
 
-	warnings := make([]string, 0)
-	if errs := validateIPAM(create.IPAM, create.EnableIPv6); errs.ErrorOrNil() != nil {
-		return errdefs.InvalidParameter(errs)
+	var warnings []string
+	if err := validateIPAM(create.IPAM, create.EnableIPv6); err != nil {
+		return errdefs.InvalidParameter(err)
 	}
 
 	nw, err := n.backend.CreateNetwork(create)
@@ -251,14 +250,14 @@ func (n *networkRouter) postNetworkCreate(ctx context.Context, w http.ResponseWr
 	return httputils.WriteJSON(w, http.StatusCreated, nw)
 }
 
-type ipFamily int
+type ipFamily string
 
 const (
-	ip4 ipFamily = 4
-	ip6 ipFamily = 6
+	ip4 ipFamily = "IPv4"
+	ip6 ipFamily = "IPv6"
 )
 
-func validateIPAM(ipam *network.IPAM, enableIPv6 bool) *multierror.Error {
+func validateIPAM(ipam *network.IPAM, enableIPv6 bool) error {
 	if ipam == nil {
 		return nil
 	}
@@ -267,7 +266,7 @@ func validateIPAM(ipam *network.IPAM, enableIPv6 bool) *multierror.Error {
 	for _, cfg := range ipam.Config {
 		subnet, err := netip.ParsePrefix(cfg.Subnet)
 		if err != nil {
-			errs = multierror.Append(errs, fmt.Errorf("subnet %q is an invalid prefix", cfg.Subnet))
+			errs = multierror.Append(errs, errors.Errorf("subnet %q is an invalid prefix", cfg.Subnet))
 			continue
 		}
 		subnetFamily := ip4
@@ -276,34 +275,38 @@ func validateIPAM(ipam *network.IPAM, enableIPv6 bool) *multierror.Error {
 		}
 
 		if subnet != subnet.Masked() {
-			errs = multierror.Append(errs, fmt.Errorf("subnet %s has some bits set in its host fragment", subnet))
+			errs = multierror.Append(errs, errors.Errorf("subnet %s has some bits set in its host fragment", subnet))
 		}
 
 		if !enableIPv6 && subnetFamily == ip6 {
-			errs = multierror.Append(errs,
-				errors.New("IPv6 has not been enabled for this network, but an IPv6 subnet has been provided"))
+			errs = multierror.Append(errs, errors.New("IPv6 has not been enabled for this network, but an IPv6 subnet has been provided"))
 		}
 
-		if cfg.IPRange != "" {
-			errs = multierror.Append(errs, validateIPRange(cfg.IPRange, subnet, subnetFamily))
+		if err := validateIPRange(cfg.IPRange, subnet, subnetFamily); err != nil {
+			errs = multierror.Append(errs, errors.Wrap(err, "invalid ip-range"))
 		}
 
-		if cfg.Gateway != "" {
-			errs = multierror.Append(errs, validateGateway(cfg.Gateway, subnet, subnetFamily))
+		if err := validateAddress(cfg.Gateway, subnet, subnetFamily); err != nil {
+			errs = multierror.Append(errs, errors.Wrap(err, "invalid gateway"))
 		}
 
 		for auxName, aux := range cfg.AuxAddress {
-			errs = multierror.Append(errs, validateAuxAddress(aux, auxName, subnet, subnetFamily))
+			if err := validateAddress(aux, subnet, subnetFamily); err != nil {
+				errs = multierror.Append(errs, errors.Wrapf(err, "invalid auxiliary address %s", auxName))
+			}
 		}
 	}
 
-	return errs
+	return errs.ErrorOrNil()
 }
 
 func validateIPRange(ipRange string, subnet netip.Prefix, subnetFamily ipFamily) error {
+	if ipRange == "" {
+		return nil
+	}
 	prefix, err := netip.ParsePrefix(ipRange)
 	if err != nil {
-		return fmt.Errorf("ip-range %q is an invalid prefix", ipRange)
+		return errors.Errorf("ip-range %q is an invalid prefix", ipRange)
 	}
 	family := ip4
 	if prefix.Addr().Is6() {
@@ -311,27 +314,30 @@ func validateIPRange(ipRange string, subnet netip.Prefix, subnetFamily ipFamily)
 	}
 
 	if family != subnetFamily {
-		err = fmt.Errorf("ip-range %s is an IPv%d block whereas it's associated to an IPv%d subnet",
-			ipRange, family, subnetFamily)
-	} else {
-		if prefix.Bits() < subnet.Bits() {
-			err = multierror.Append(err, fmt.Errorf("ip-range %s is bigger than its associated subnet", ipRange))
-		}
-		if prefix != prefix.Masked() {
-			err = multierror.Append(err, fmt.Errorf("ip-range %s has some bits set in its host fragment", prefix))
-		}
-		if !subnet.Overlaps(prefix) {
-			err = multierror.Append(err, fmt.Errorf("subnet doesn't contain ip-range %s", ipRange))
-		}
+		return errors.Errorf("ip-range %s is an %s block whereas it's associated to an %s subnet", ipRange, family, subnetFamily)
 	}
 
-	return err
+	var errs *multierror.Error
+	if prefix.Bits() < subnet.Bits() {
+		errs = multierror.Append(errs, errors.Errorf("ip-range %s is bigger than its associated subnet", ipRange))
+	}
+	if prefix != prefix.Masked() {
+		errs = multierror.Append(errs, errors.Errorf("ip-range %s has some bits set in its host fragment", prefix))
+	}
+	if !subnet.Overlaps(prefix) {
+		errs = multierror.Append(errs, errors.Errorf("subnet doesn't contain ip-range %s", ipRange))
+	}
+
+	return errs.ErrorOrNil()
 }
 
-func validateGateway(gateway string, subnet netip.Prefix, subnetFamily ipFamily) error {
-	addr, err := netip.ParseAddr(gateway)
+func validateAddress(address string, subnet netip.Prefix, subnetFamily ipFamily) error {
+	if address == "" {
+		return nil
+	}
+	addr, err := netip.ParseAddr(address)
 	if err != nil {
-		return fmt.Errorf("gateway %q is an invalid address", gateway)
+		return errors.Wrapf(err, "invalid address")
 	}
 	family := ip4
 	if addr.Is6() {
@@ -339,30 +345,10 @@ func validateGateway(gateway string, subnet netip.Prefix, subnetFamily ipFamily)
 	}
 
 	if family != subnetFamily {
-		return fmt.Errorf("gateway %s is an IPv%d address whereas it's associated to an IPv%d subnet block",
-			gateway, family, subnetFamily)
-	} else if !subnet.Contains(addr) {
-		return fmt.Errorf("subnet doesn't contain gateway %s", gateway)
+		return errors.Errorf("address (%s) is an %s address whereas it's associated to an %s subnet", address, family, subnetFamily)
 	}
-
-	return nil
-}
-
-func validateAuxAddress(aux, auxName string, subnet netip.Prefix, subnetFamily ipFamily) error {
-	addr, err := netip.ParseAddr(aux)
-	if err != nil {
-		return fmt.Errorf("auxiliary address %q is an invalid address", aux)
-	}
-	family := ip4
-	if addr.Is6() {
-		family = ip6
-	}
-
-	if family != subnetFamily {
-		return fmt.Errorf("auxiliary address %s is an IPv%d address whereas it's associated to an IPv%d subnet",
-			auxName, family, subnetFamily)
-	} else if !subnet.Contains(addr) {
-		return fmt.Errorf("subnet doesn't contain auxiliary address %s", aux)
+	if !subnet.Contains(addr) {
+		return errors.Errorf("address (%s) is outside of subnet (%s)", address, subnet)
 	}
 
 	return nil
