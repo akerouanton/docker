@@ -17,7 +17,7 @@ import (
 // TestBridgeICC tries to ping container ctr1 from container ctr2 using its hostname. Thus, this test checks:
 // 1. DNS resolution ; 2. ARP/NDP ; 3. whether containers can communicate with each other.
 func TestBridgeICC(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
+	// skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 
 	d := daemon.New(t)
 	d.StartWithBusybox(t, "-D", "--experimental", "--ip6tables")
@@ -142,7 +142,7 @@ func TestBridgeICC(t *testing.T) {
 }
 
 func TestBridgeIPv6SLAACLLAddress(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
+	// skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 
 	d := daemon.New(t)
 	d.StartWithBusybox(t, "-D", "--experimental", "--ip6tables")
@@ -221,7 +221,7 @@ func TestBridgeIPv6SLAACLLAddress(t *testing.T) {
 
 // TestBridgeINC makes sure two containers on two different bridge networks can't communicate with each other.
 func TestBridgeINC(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
+	// skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 
 	d := daemon.New(t)
 	d.StartWithBusybox(t, "-D", "--experimental", "--ip6tables")

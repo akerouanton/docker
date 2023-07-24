@@ -68,7 +68,7 @@ type natFromLocalhostTC struct {
 //  2. Loopback address, and any other local address ;
 //  3. With and without userland proxy enabled ;
 func TestAccessPublishedPortFromLocalhost(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
+	// skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 	skip.If(t, testEnv.IsRootless())
 
 	testcases := []natFromLocalhostTC{
