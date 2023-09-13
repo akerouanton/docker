@@ -514,7 +514,7 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 	// on first network connecting.
 	defaultNetName := runconfig.DefaultDaemonNetworkMode().NetworkName()
 	if nConf, ok := container.NetworkSettings.Networks[defaultNetName]; ok {
-		cleanOperationalData(nConf)
+		nConf.ClearState()
 		if err := daemon.connectToNetwork(cfg, container, defaultNetName, nConf.EndpointSettings, updateSettings); err != nil {
 			return err
 		}
@@ -531,7 +531,7 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 	}
 
 	for netName, epConf := range networks {
-		cleanOperationalData(epConf)
+		epConf.ClearState()
 		if err := daemon.connectToNetwork(cfg, container, netName, epConf.EndpointSettings, updateSettings); err != nil {
 			return err
 		}
@@ -632,20 +632,6 @@ func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *n
 	return nil
 }
 
-// cleanOperationalData resets the operational data from the passed endpoint settings
-func cleanOperationalData(es *network.EndpointSettings) {
-	es.EndpointID = ""
-	es.Gateway = ""
-	es.IPAddress = ""
-	es.IPPrefixLen = 0
-	es.IPv6Gateway = ""
-	es.GlobalIPv6Address = ""
-	es.GlobalIPv6PrefixLen = 0
-	if es.IPAMOperational {
-		es.IPAMConfig = nil
-	}
-}
-
 func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings, updateSettings bool) error {
 	if containertypes.NetworkMode(n.Name()).IsUserDefined() {
 		endpointConfig.DNSNames = buildEndpointDNSNames(container, endpointConfig.Aliases)
@@ -719,12 +705,14 @@ func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.
 
 	var operIPAM bool
 	if nwCfg != nil {
+		// nwCfg is not nil iff the network idOrName is an attachable overlay network.
 		if epConfig, ok := nwCfg.EndpointsConfig[nwName]; ok {
 			if endpointConfig.IPAMConfig == nil || (endpointConfig.IPAMConfig.IPv4Address == "" && endpointConfig.IPAMConfig.IPv6Address == "" && len(endpointConfig.IPAMConfig.LinkLocalIPs) == 0) {
 				operIPAM = true
 			}
 
-			// copy IPAMConfig and NetworkID from epConfig via AttachNetwork
+			// Copy the IPAMConfig and NetworkID values returned by the AttachNetwork() called made to the cluster
+			// leader.
 			endpointConfig.IPAMConfig = epConfig.IPAMConfig
 			endpointConfig.NetworkID = epConfig.NetworkID
 		}
@@ -1013,7 +1001,7 @@ func (daemon *Daemon) releaseNetwork(container *container.Container) {
 			continue
 		}
 
-		cleanOperationalData(epSettings)
+		epSettings.ClearState()
 	}
 
 	sb, err := daemon.netController.SandboxByID(sid)

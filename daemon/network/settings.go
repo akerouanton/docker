@@ -35,6 +35,25 @@ type EndpointSettings struct {
 	IPAMOperational bool
 }
 
+// ClearState will remove any stale state and keep only settings (depending on the lifecycle of the container).
+func (epSettings *EndpointSettings) ClearState() {
+	// IPAMOperational is true iff the endpoint is connected to an attachable overlay network. In that case, assume the
+	// Swarm leader has reclaimed assigned addresses when this function is called, and clear the endpoint's IPAMConfig.
+	var ipamConfig *networktypes.EndpointIPAMConfig
+	if !epSettings.IPAMOperational {
+		ipamConfig = epSettings.EndpointSettings.IPAMConfig
+	}
+
+	epSettings.EndpointSettings = &networktypes.EndpointSettings{
+		IPAMConfig: ipamConfig,
+		Links:      epSettings.EndpointSettings.Links,
+		Aliases:    epSettings.EndpointSettings.Aliases,
+		// NetworkID is not a user-specified setting, however it's kept in case we want to reconnect to the same
+		// network when, and if, the container restarts.
+		NetworkID: epSettings.EndpointSettings.NetworkID,
+	}
+}
+
 // AttachmentStore stores the load balancer IP address for a network id.
 type AttachmentStore struct {
 	sync.Mutex
