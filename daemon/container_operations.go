@@ -522,7 +522,7 @@ func (daemon *Daemon) updateContainerNetworkSettings(container *container.Contai
 	}
 }
 
-// Cleanup any stale sandbox left over due to ungraceful daemon shutdown
+// cleanupStaleSandbox remove any stale sandbox left over due to ungraceful daemon [shutdown]
 func (daemon *Daemon) cleanupStaleSandbox(container *container.Container) {
 	if err := daemon.netController.SandboxDestroy(container.ID); err != nil {
 		log.G(context.TODO()).WithError(err).Errorf("failed to cleanup up stale network sandbox for container %s", container.ID)
@@ -931,6 +931,8 @@ func (daemon *Daemon) normalizeNetMode(container *container.Container) error {
 }
 
 func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *container.Container) error {
+	daemon.cleanupStaleSandbox(container)
+
 	if container.HostConfig.NetworkMode.IsContainer() {
 		// we need to get the hosts files from the container to join
 		nc, err := daemon.getNetworkedContainer(container.ID, container.HostConfig.NetworkMode.ConnectedContainer())
@@ -959,8 +961,6 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 	if err := daemon.attachSwarmNetworks(container); err != nil {
 		return err
 	}
-
-	daemon.cleanupStaleSandbox(container)
 	if err := daemon.allocateNetworks(cfg, container); err != nil {
 		return err
 	}
