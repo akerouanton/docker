@@ -32,6 +32,7 @@ type Settings struct {
 // needs to be persisted to disk but not exposed in the api.
 type EndpointSettings struct {
 	*networktypes.EndpointSettings
+	// IPAMOperational indicates whether IPAMConfig come from a Swarm NetworkAttachment.
 	IPAMOperational bool
 }
 

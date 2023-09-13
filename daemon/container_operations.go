@@ -321,68 +321,85 @@ func (daemon *Daemon) updateNetwork(cfg *config.Config, container *container.Con
 	return nil
 }
 
-func (daemon *Daemon) findAndAttachNetwork(container *container.Container, idOrName string, epConfig *networktypes.EndpointSettings) (*libnetwork.Network, *networktypes.NetworkingConfig, error) {
-	id := getNetworkID(idOrName, epConfig)
-
-	n, err := daemon.FindNetwork(id)
-	if err != nil {
-		// We should always be able to find the network for a managed container.
-		if container.Managed {
-			return nil, nil, err
-		}
+// attachSwarmNetworks looks for networks that can't be found on the local node and submit a NetworkAttachment request
+// to the Swarm leader for each of those. If the leader can't find these networks too, a [errdefs.NotFound] error is
+// returned.
+func (daemon *Daemon) attachSwarmNetworks(container *container.Container) (retErr error) {
+	if !daemon.cluster.IsAgent() {
+		return nil
+	}
+	if daemon.attachableNetworkLock == nil {
+		return errors.New("no attachableNetworkLock available")
+	}
+	if daemon.clusterProvider == nil {
+		return errors.New("no clusterProvider available")
 	}
 
-	// If we found a network and if it is not dynamically created
-	// we should never attempt to attach to that network here.
-	if n != nil {
-		if container.Managed || !n.Dynamic() {
-			return n, nil, nil
+	// Track attachment made and rollback everything if something goes wrong.
+	// TODO(aker): use a NetworkRef instead of a string
+	var attachedNetworks []string
+	defer func() {
+		if retErr == nil {
+			return
 		}
-		// Throw an error if the container is already attached to the network
-		if container.NetworkSettings.Networks != nil {
-			networkName := n.Name()
-			containerName := strings.TrimPrefix(container.Name, "/")
-			if nw, ok := container.NetworkSettings.Networks[networkName]; ok && nw.EndpointID != "" {
-				err := fmt.Errorf("%s is already attached to network %s", containerName, networkName)
-				return n, nil, errdefs.Conflict(err)
+		for _, id := range attachedNetworks {
+			if err := daemon.clusterProvider.DetachNetwork(id, container.ID); err != nil {
+				log.G(context.TODO()).Warnf("Could not rollback attachment for container %s to network %s: %v", container.ID, id, err)
 			}
 		}
+	}()
+
+	for idOrName, epConfig := range container.NetworkSettings.Networks {
+		id := getNetworkID(idOrName, epConfig.EndpointSettings)
+
+		_, err := daemon.FindNetwork(id)
+		// Ignore not found error unless this container is managed by Swarm, in which case the NetworkAttachment
+		// should have already been created at the time the container starts.
+		if err != nil && (!errdefs.IsNotFound(err) || container.Managed) {
+			return err
+		}
+		if err == nil {
+			continue
+		}
+
+		epSettings, err := daemon.attachSwarmNetwork(id, container.ID, collectEndpointAddresses(epConfig.IPAMConfig))
+		if err != nil {
+			return err
+		}
+		attachedNetworks = append(attachedNetworks, id)
+
+		// Now, this container has an attachment to a swarm scope network. Update the container network settings
+		// accordingly.
+		container.NetworkSettings.HasSwarmEndpoint = true
+		container.NetworkSettings.Networks[idOrName].ClearState()
+		container.NetworkSettings.Networks[idOrName].IPAMOperational = true
+		container.NetworkSettings.Networks[idOrName].IPAMConfig = epSettings.IPAMConfig
+		container.NetworkSettings.Networks[idOrName].NetworkID = epSettings.NetworkID
 	}
 
-	var addresses []string
-	if epConfig != nil && epConfig.IPAMConfig != nil {
-		if epConfig.IPAMConfig.IPv4Address != "" {
-			addresses = append(addresses, epConfig.IPAMConfig.IPv4Address)
-		}
-		if epConfig.IPAMConfig.IPv6Address != "" {
-			addresses = append(addresses, epConfig.IPAMConfig.IPv6Address)
-		}
-	}
+	return nil
+}
 
-	if n == nil && daemon.attachableNetworkLock != nil {
-		daemon.attachableNetworkLock.Lock(id)
-		defer daemon.attachableNetworkLock.Unlock(id)
-	}
+// attachSwarmNetwork sends API requests to the Swarm leader to attach the given networkID to the container referenced
+// by containerID. The API request is retried if the network is still not present after a successful attachment. It
+// returns the EndpointSettings containing assigned addresses.
+// TODO(aker): use Refs instead of networkID / containerID
+func (daemon *Daemon) attachSwarmNetwork(networkID, containerID string, addresses []string) (*networktypes.EndpointSettings, error) {
+	daemon.attachableNetworkLock.Lock(networkID)
+	defer daemon.attachableNetworkLock.Unlock(networkID)
 
 	retryCount := 0
 	var nwCfg *networktypes.NetworkingConfig
 	for {
-		// In all other cases, attempt to attach to the network to
-		// trigger attachment in the swarm cluster manager.
-		if daemon.clusterProvider != nil {
-			var err error
-			nwCfg, err = daemon.clusterProvider.AttachNetwork(id, container.ID, addresses)
-			if err != nil {
-				return nil, nil, err
-			}
+		nwCfg, err := daemon.clusterProvider.AttachNetwork(networkID, containerID, addresses)
+		if err != nil {
+			return nil, err
 		}
 
-		n, err = daemon.FindNetwork(id)
+		_, err = daemon.FindNetwork(networkID)
 		if err != nil {
-			if daemon.clusterProvider != nil {
-				if err := daemon.clusterProvider.DetachNetwork(id, container.ID); err != nil {
-					log.G(context.TODO()).Warnf("Could not rollback attachment for container %s to network %s: %v", container.ID, idOrName, err)
-				}
+			if err := daemon.clusterProvider.DetachNetwork(networkID, containerID); err != nil {
+				log.G(context.TODO()).Warnf("Could not rollback attachment for container %s to network %s: %v", containerID, networkID, err)
 			}
 
 			// Retry network attach again if we failed to
@@ -395,23 +412,42 @@ func (daemon *Daemon) findAndAttachNetwork(container *container.Container, idOrN
 			if nwCfg != nil {
 				if _, ok := err.(libnetwork.ErrNoSuchNetwork); ok {
 					if retryCount >= 5 {
-						return nil, nil, fmt.Errorf("could not find network %s after successful attachment", idOrName)
+						return nil, fmt.Errorf("could not find network %s after successful attachment", networkID)
 					}
 					retryCount++
 					continue
 				}
 			}
 
-			return nil, nil, err
+			return nil, err
 		}
 
 		break
 	}
 
-	// This container has attachment to a swarm scope
-	// network. Update the container network settings accordingly.
-	container.NetworkSettings.HasSwarmEndpoint = true
-	return n, nwCfg, nil
+	epSettings, ok := nwCfg.EndpointsConfig[networkID]
+	if !ok {
+		return nil, fmt.Errorf("no endpoint config returned by swarm for network %s", networkID)
+	}
+
+	if _, err := daemon.FindNetwork(networkID); err != nil {
+		return nil, fmt.Errorf("swarm-scope network %s has been attached but can't be found locally: %w", networkID, err)
+	}
+
+	return epSettings, nil
+}
+
+func collectEndpointAddresses(ipamConfig *networktypes.EndpointIPAMConfig) []string {
+	var addresses []string
+
+	if ipamConfig.IPv4Address != "" {
+		addresses = append(addresses, ipamConfig.IPv4Address)
+	}
+	if ipamConfig.IPv6Address != "" {
+		addresses = append(addresses, ipamConfig.IPv6Address)
+	}
+
+	return addresses
 }
 
 // updateContainerNetworkSettings updates the network settings
@@ -684,39 +720,12 @@ func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.
 		container.Config.NetworkDisabled = true
 		return nil
 	}
-	if endpointConfig == nil {
-		endpointConfig = &networktypes.EndpointSettings{}
-	}
 
-	n, nwCfg, err := daemon.findAndAttachNetwork(container, idOrName, endpointConfig)
+	n, err := daemon.FindNetwork(idOrName)
 	if err != nil {
 		return err
 	}
-	if n == nil {
-		return nil
-	}
 	nwName := n.Name()
-
-	if idOrName != container.HostConfig.NetworkMode.NetworkName() {
-		if err := daemon.normalizeNetMode(container); err != nil {
-			return err
-		}
-	}
-
-	var operIPAM bool
-	if nwCfg != nil {
-		// nwCfg is not nil iff the network idOrName is an attachable overlay network.
-		if epConfig, ok := nwCfg.EndpointsConfig[nwName]; ok {
-			if endpointConfig.IPAMConfig == nil || (endpointConfig.IPAMConfig.IPv4Address == "" && endpointConfig.IPAMConfig.IPv6Address == "" && len(endpointConfig.IPAMConfig.LinkLocalIPs) == 0) {
-				operIPAM = true
-			}
-
-			// Copy the IPAMConfig and NetworkID values returned by the AttachNetwork() called made to the cluster
-			// leader.
-			endpointConfig.IPAMConfig = epConfig.IPAMConfig
-			endpointConfig.NetworkID = epConfig.NetworkID
-		}
-	}
 
 	if err := daemon.updateNetworkConfig(container, n, endpointConfig, updateSettings); err != nil {
 		return err
@@ -945,6 +954,10 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 		container.Config.Hostname = hn
 	}
 
+	if err := daemon.attachSwarmNetworks(container); err != nil {
+		return err
+	}
+
 	if err := daemon.allocateNetworks(cfg, container); err != nil {
 		return err
 	}
@@ -1128,6 +1141,8 @@ func (daemon *Daemon) DeactivateContainerServiceBinding(containerName string) er
 	return sb.DisableService()
 }
 
+// getNetworkID returns the NetworkID used by previous container run if it's a custom network, or return the name
+// argument as is.
 func getNetworkID(name string, endpointSettings *networktypes.EndpointSettings) string {
 	// We only want to prefer NetworkID for user defined networks.
 	// For systems like bridge, none, etc. the name is preferred (otherwise restart may cause issues)

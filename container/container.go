@@ -68,7 +68,7 @@ type Container struct {
 	RWLayer         layer.RWLayer  `json:"-"`
 	ID              string
 	Created         time.Time
-	Managed         bool
+	Managed         bool // Managed indicates that this container is managed by Swarm agent (ie. it's associated to a Swarm task).
 	Path            string
 	Args            []string
 	Config          *containertypes.Config
