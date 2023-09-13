@@ -220,7 +220,8 @@ func (daemon *Daemon) buildSandboxOptions(cfg *config.Config, container *contain
 	return sboxOptions, nil
 }
 
-func (daemon *Daemon) updateNetworkSettings(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings) error {
+// TODO(aker): do that only on ContainerCreate, NetworkConnect, etc.. before the container NetworkSettings are modified.
+func (daemon *Daemon) validateNetworkSettings(container *container.Container, n *libnetwork.Network) error {
 	if container.NetworkSettings == nil {
 		container.NetworkSettings = &network.Settings{}
 	}
@@ -257,10 +258,6 @@ func (daemon *Daemon) updateNetworkSettings(container *container.Container, n *l
 			containertypes.NetworkMode(n.Name()).IsNone() {
 			return runconfig.ErrConflictNoNetwork
 		}
-	}
-
-	container.NetworkSettings.Networks[n.Name()] = &network.EndpointSettings{
-		EndpointSettings: endpointConfig,
 	}
 
 	return nil
@@ -659,8 +656,11 @@ func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *lib
 	}
 
 	if updateSettings {
-		if err := daemon.updateNetworkSettings(container, n, endpointConfig); err != nil {
+		if err := daemon.validateNetworkSettings(container, n); err != nil {
 			return err
+		}
+		container.NetworkSettings.Networks[n.Name()] = &network.EndpointSettings{
+			EndpointSettings: endpointConfig,
 		}
 	}
 	return nil
