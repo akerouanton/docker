@@ -522,17 +522,19 @@ func (daemon *Daemon) updateContainerNetworkSettings(container *container.Contai
 	}
 }
 
+// Cleanup any stale sandbox left over due to ungraceful daemon shutdown
+func (daemon *Daemon) cleanupStaleSandbox(container *container.Container) {
+	if err := daemon.netController.SandboxDestroy(container.ID); err != nil {
+		log.G(context.TODO()).WithError(err).Errorf("failed to cleanup up stale network sandbox for container %s", container.ID)
+	}
+}
+
 func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.Container) (retErr error) {
 	if daemon.netController == nil {
 		return nil
 	}
 
 	start := time.Now()
-
-	// Cleanup any stale sandbox left over due to ungraceful daemon shutdown
-	if err := daemon.netController.SandboxDestroy(container.ID); err != nil {
-		log.G(context.TODO()).WithError(err).Errorf("failed to cleanup up stale network sandbox for container %s", container.ID)
-	}
 
 	if container.Config.NetworkDisabled || container.HostConfig.NetworkMode.IsContainer() {
 		return nil
@@ -958,6 +960,7 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 		return err
 	}
 
+	daemon.cleanupStaleSandbox(container)
 	if err := daemon.allocateNetworks(cfg, container); err != nil {
 		return err
 	}
