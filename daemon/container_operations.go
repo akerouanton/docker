@@ -536,10 +536,6 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 
 	start := time.Now()
 
-	if container.Config.NetworkDisabled || container.HostConfig.NetworkMode.IsContainer() {
-		return nil
-	}
-
 	updateSettings := false
 	if len(container.NetworkSettings.Networks) == 0 {
 		daemon.updateContainerNetworkSettings(container, nil)
@@ -932,6 +928,10 @@ func (daemon *Daemon) normalizeNetMode(container *container.Container) error {
 
 func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *container.Container) error {
 	daemon.cleanupStaleSandbox(container)
+
+	if container.Config.NetworkDisabled {
+		return nil
+	}
 
 	if container.HostConfig.NetworkMode.IsContainer() {
 		// we need to get the hosts files from the container to join
