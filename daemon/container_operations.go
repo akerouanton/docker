@@ -489,7 +489,7 @@ func (daemon *Daemon) updateContainerNetworkSettings(container *container.Contai
 	}
 }
 
-func (daemon *Daemon) allocateNetwork(cfg *config.Config, container *container.Container) (retErr error) {
+func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.Container) (retErr error) {
 	if daemon.netController == nil {
 		return nil
 	}
@@ -957,7 +957,7 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 		container.Config.Hostname = hn
 	}
 
-	if err := daemon.allocateNetwork(cfg, container); err != nil {
+	if err := daemon.allocateNetworks(cfg, container); err != nil {
 		return err
 	}
 
