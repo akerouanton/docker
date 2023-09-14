@@ -1058,7 +1058,7 @@ func (daemon *Daemon) ConnectToNetwork(container *container.Container, idOrName 
 
 	// TODO(aker): add data sanitization/validation/normalization here --
 	//  we should know whether data are sane _before_ we even try to connect to a network
-	// (and same applies to ContainerStart flow and, to a lesser extent to, ContainerCreate).
+	// (and same applies to ContainerStart flow and, to a lesser extent, to ContainerCreate).
 
 	if !container.Running {
 		if container.RemovalInProgress || container.Dead {

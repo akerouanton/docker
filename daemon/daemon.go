@@ -56,7 +56,6 @@ import (
 	"github.com/docker/docker/internal/compatcontext"
 	"github.com/docker/docker/layer"
 	libcontainerdtypes "github.com/docker/docker/libcontainerd/types"
-	"github.com/docker/docker/libnetwork"
 	"github.com/docker/docker/libnetwork/cluster"
 	nwconfig "github.com/docker/docker/libnetwork/config"
 	"github.com/docker/docker/pkg/authorization"
@@ -104,7 +103,6 @@ type Daemon struct {
 	defaultLogConfig      containertypes.LogConfig
 	registryService       *registry.Service
 	EventsService         *events.Events
-	netController         *libnetwork.Controller
 	volumes               *volumesservice.VolumesService
 	root                  string
 	sysInfoOnce           sync.Once
