@@ -523,6 +523,7 @@ func (daemon *Daemon) updateContainerNetworkSettings(container *container.Contai
 }
 
 // cleanupStaleSandbox remove any stale sandbox left over due to ungraceful daemon [shutdown]
+// TODO(aker): check if this method has something to do with Cleanup.
 func (daemon *Daemon) cleanupStaleSandbox(container *container.Container) {
 	if err := daemon.netController.SandboxDestroy(container.ID); err != nil {
 		log.G(context.TODO()).WithError(err).Errorf("failed to cleanup up stale network sandbox for container %s", container.ID)
@@ -537,6 +538,7 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 	start := time.Now()
 
 	validateSettings := false
+	// TODO(aker): once upfront validation of NetworkSettings is done,
 	if len(container.NetworkSettings.Networks) == 0 {
 		daemon.updateContainerNetworkSettings(container, nil)
 		validateSettings = true
@@ -666,6 +668,7 @@ func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *n
 	return nil
 }
 
+// TODO(aker): This is called from ConnectToNetwork and allocateNetworks (through connectToNetwork)
 func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings, validateSettings bool) error {
 	if containertypes.NetworkMode(n.Name()).IsUserDefined() {
 		endpointConfig.DNSNames = buildEndpointDNSNames(container, endpointConfig.Aliases)
@@ -675,14 +678,16 @@ func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *lib
 		return err
 	}
 
+	// TODO(aker): well, actually, in this state this is not just about validating data -- that's next thing to do
 	if validateSettings {
 		if err := daemon.validateNetworkSettings(container, n); err != nil {
 			return err
 		}
-		container.NetworkSettings.Networks[n.Name()] = &network.EndpointSettings{
-			EndpointSettings: endpointConfig,
-		}
 	}
+	container.NetworkSettings.Networks[n.Name()] = &network.EndpointSettings{
+		EndpointSettings: endpointConfig,
+	}
+
 	return nil
 }
 
@@ -750,7 +755,8 @@ func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.
 	}()
 	container.NetworkSettings.Networks[nwName] = &network.EndpointSettings{
 		EndpointSettings: endpointConfig,
-		IPAMOperational:  operIPAM,
+		// TODO(aker): check whether IPAMOperational is still needed here
+		// IPAMOperational: operIPAM,
 	}
 
 	delete(container.NetworkSettings.Networks, n.ID())
@@ -950,6 +956,11 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 		return nil
 	}
 
+	if err := daemon.attachSwarmNetworks(container); err != nil {
+		return err
+	}
+
+	// TODO(aker): make this part of data validation / normalization
 	if container.HostConfig.NetworkMode.IsHost() && container.Config.Hostname == "" {
 		hn, err := os.Hostname()
 		if err != nil {
@@ -958,9 +969,10 @@ func (daemon *Daemon) initializeNetworking(cfg *config.Config, container *contai
 		container.Config.Hostname = hn
 	}
 
-	if err := daemon.attachSwarmNetworks(container); err != nil {
+	if err := validateNetworkingConfig(n, endpointConfig); err != nil {
 		return err
 	}
+
 	if err := daemon.allocateNetworks(cfg, container); err != nil {
 		return err
 	}
@@ -1048,11 +1060,16 @@ func (daemon *Daemon) ConnectToNetwork(container *container.Container, idOrName 
 	container.Lock()
 	defer container.Unlock()
 
+	// TODO(aker): add data sanitization/validation/normalization here --
+	//  we should know whether data are sane _before_ we even try to connect to a network
+	// (and same applies to ContainerStart flow and, to a lesser extent to, ContainerCreate).
+
 	if !container.Running {
 		if container.RemovalInProgress || container.Dead {
 			return errRemovalContainer(container.ID)
 		}
 
+		// Swarm-scope networks don't exist until a NetworkAttachment request is sent to the Swarm leader.
 		n, err := daemon.FindNetwork(idOrName)
 		if err == nil && n != nil {
 			if err := daemon.updateNetworkConfig(container, n, endpointConfig, true); err != nil {
