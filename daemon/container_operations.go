@@ -531,10 +531,6 @@ func (daemon *Daemon) cleanupStaleSandbox(container *container.Container) {
 }
 
 func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.Container) (retErr error) {
-	if daemon.netController == nil {
-		return nil
-	}
-
 	start := time.Now()
 
 	validateSettings := false
