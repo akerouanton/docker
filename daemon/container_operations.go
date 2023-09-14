@@ -536,10 +536,10 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 
 	start := time.Now()
 
-	updateSettings := false
+	validateSettings := false
 	if len(container.NetworkSettings.Networks) == 0 {
 		daemon.updateContainerNetworkSettings(container, nil)
-		updateSettings = true
+		validateSettings = true
 	}
 
 	// always connect default network first since only default
@@ -549,7 +549,7 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 	defaultNetName := runconfig.DefaultDaemonNetworkMode().NetworkName()
 	if nConf, ok := container.NetworkSettings.Networks[defaultNetName]; ok {
 		nConf.ClearState()
-		if err := daemon.connectToNetwork(cfg, container, defaultNetName, nConf.EndpointSettings, updateSettings); err != nil {
+		if err := daemon.connectToNetwork(cfg, container, defaultNetName, nConf.EndpointSettings, validateSettings); err != nil {
 			return err
 		}
 	}
@@ -566,7 +566,7 @@ func (daemon *Daemon) allocateNetworks(cfg *config.Config, container *container.
 
 	for netName, epConf := range networks {
 		epConf.ClearState()
-		if err := daemon.connectToNetwork(cfg, container, netName, epConf.EndpointSettings, updateSettings); err != nil {
+		if err := daemon.connectToNetwork(cfg, container, netName, epConf.EndpointSettings, validateSettings); err != nil {
 			return err
 		}
 	}
@@ -666,7 +666,7 @@ func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *n
 	return nil
 }
 
-func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings, updateSettings bool) error {
+func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings, validateSettings bool) error {
 	if containertypes.NetworkMode(n.Name()).IsUserDefined() {
 		endpointConfig.DNSNames = buildEndpointDNSNames(container, endpointConfig.Aliases)
 	}
@@ -675,7 +675,7 @@ func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *lib
 		return err
 	}
 
-	if updateSettings {
+	if validateSettings {
 		if err := daemon.validateNetworkSettings(container, n); err != nil {
 			return err
 		}
@@ -709,7 +709,7 @@ func buildEndpointDNSNames(ctr *container.Container, aliases []string) []string 
 	return sliceutil.Dedup(dnsNames)
 }
 
-func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.Container, idOrName string, endpointConfig *networktypes.EndpointSettings, updateSettings bool) (err error) {
+func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.Container, idOrName string, endpointConfig *networktypes.EndpointSettings, validateSettings bool) (err error) {
 	start := time.Now()
 	if container.HostConfig.NetworkMode.IsContainer() {
 		return runconfig.ErrConflictSharedNetwork
@@ -725,7 +725,7 @@ func (daemon *Daemon) connectToNetwork(cfg *config.Config, container *container.
 	}
 	nwName := n.Name()
 
-	if err := daemon.updateNetworkConfig(container, n, endpointConfig, updateSettings); err != nil {
+	if err := daemon.updateNetworkConfig(container, n, endpointConfig, validateSettings); err != nil {
 		return err
 	}
 
