@@ -94,14 +94,14 @@ func TestDNSIPQuery(t *testing.T) {
 	w.ClearResponse()
 
 	// test MX query with non existent name results in ServFail response with 0 answer records
-	// since this is a unit test env, we disable proxying DNS above which results in ServFail rather than NXDOMAIN
+	// since this is a unit test env, we disable proxying DNS above which results in NXDOMAIN
 	q = new(dns.Msg)
 	q.SetQuestion("nonexistent", dns.TypeMX)
 	r.serveDNS(w, q)
 	resp = w.GetResponse()
 	checkNonNullResponse(t, resp)
 	t.Log("Response: ", resp.String())
-	checkDNSResponseCode(t, resp, dns.RcodeServerFailure)
+	checkDNSResponseCode(t, resp, dns.RcodeNameError)
 	w.ClearResponse()
 }
 

@@ -263,10 +263,6 @@ func TestReplySERVFAIL(t *testing.T) {
 			q:    new(dns.Msg).SetQuestion("_sip._tcp.example.com.", dns.TypeSRV),
 		},
 		{
-			name: "ProxyDNS=false",
-			q:    new(dns.Msg).SetQuestion("example.com.", dns.TypeA),
-		},
-		{
 			name:     "ProxyDNS=true", // No extDNS servers configured -> no answer from any upstream
 			q:        new(dns.Msg).SetQuestion("example.com.", dns.TypeA),
 			proxyDNS: true,
@@ -284,6 +280,17 @@ func TestReplySERVFAIL(t *testing.T) {
 			checkDNSResponseCode(t, resp, dns.RcodeServerFailure)
 		})
 	}
+}
+
+func TestReplyNXDOMAIN(t *testing.T) {
+	rsv := NewResolver("", false, badSRVDNSBackend{})
+	rsv.logger = testLogger(t)
+	w := &tstwriter{}
+	rsv.serveDNS(w, new(dns.Msg).SetQuestion("example.com.", dns.TypeA))
+	resp := w.GetResponse()
+	checkNonNullResponse(t, resp)
+	t.Log("Response: ", resp.String())
+	checkDNSResponseCode(t, resp, dns.RcodeNameError)
 }
 
 type badSRVDNSBackend struct{ noopDNSBackend }

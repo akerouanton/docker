@@ -433,6 +433,8 @@ func (r *Resolver) serveDNS(w dns.ResponseWriter, query *dns.Msg) {
 		} else {
 			resp = r.forwardExtDNS(ctx, w.LocalAddr().Network(), query)
 		}
+	} else {
+		resp = new(dns.Msg).SetRcode(query, dns.RcodeNameError)
 	}
 
 	if resp == nil {
