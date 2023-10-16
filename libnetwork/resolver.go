@@ -365,11 +365,13 @@ func (r *Resolver) serveDNS(w dns.ResponseWriter, query *dns.Msg) {
 	queryName := query.Question[0].Name
 	queryType := query.Question[0].Qtype
 
-	ctx, span := otel.Tracer("").Start(context.Background(), "resolver.serveDNS", trace.WithAttributes(
+	ctx := context.Background()
+	/* ctx, span := otel.Tracer("").Start(context.Background(), "resolver.serveDNS", trace.WithAttributes(
 		attribute.String("libnet.resolver.query.name", queryName),
 		attribute.String("libnet.resolver.query.type", dns.TypeToString[queryType]),
 	))
-	defer span.End()
+	defer span.End() */
+	r.log(ctx).Debugf("[resolver] trying to resolve %s %s", dns.TypeToString[queryType], queryName)
 
 	switch queryType {
 	case dns.TypeA:
@@ -389,8 +391,8 @@ func (r *Resolver) serveDNS(w dns.ResponseWriter, query *dns.Msg) {
 	reply := func(msg *dns.Msg) {
 		if err = w.WriteMsg(msg); err != nil {
 			r.log(ctx).WithError(err).Errorf("[resolver] failed to write response")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "WriteMsg failed")
+			/* span.RecordError(err)
+			span.SetStatus(codes.Error, "WriteMsg failed") */
 		}
 	}
 
@@ -415,9 +417,10 @@ func (r *Resolver) serveDNS(w dns.ResponseWriter, query *dns.Msg) {
 			}
 		}
 		resp.Truncate(maxSize)
-		span.AddEvent("found local record", trace.WithAttributes(
+		r.log(ctx).Debugf("[resolver] found local record %s")
+		/* span.AddEvent("found local record", trace.WithAttributes(
 			attribute.String("libnet.resolver.resp", resp.String()),
-		))
+		)) */
 		reply(resp)
 		return
 	}
