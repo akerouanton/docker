@@ -118,11 +118,6 @@ func (daemon *Daemon) createSpec(ctx context.Context, daemonCfg *configStore, c 
 		s.Mounts = append(s.Mounts, m)
 	}
 
-	linkedEnv, err := daemon.setupLinkedContainers(c)
-	if err != nil {
-		return nil, err
-	}
-
 	isHyperV := daemon.isHyperV(c)
 	if isHyperV {
 		s.Windows.HyperV = &specs.WindowsHyperV{}
@@ -130,7 +125,7 @@ func (daemon *Daemon) createSpec(ctx context.Context, daemonCfg *configStore, c 
 
 	// In s.Process
 	s.Process.Cwd = c.Config.WorkingDir
-	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
+	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty)
 	s.Process.Terminal = c.Config.Tty
 
 	if c.Config.Tty {

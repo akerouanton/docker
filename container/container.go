@@ -727,7 +727,7 @@ func getConfigTargetPath(r *swarmtypes.ConfigReference) string {
 }
 
 // CreateDaemonEnvironment creates a new environment variable slice for this container.
-func (container *Container) CreateDaemonEnvironment(tty bool, linkedEnv []string) []string {
+func (container *Container) CreateDaemonEnvironment(tty bool) []string {
 	// Setup environment
 	ctrOS := container.OS
 	if ctrOS == "" {
@@ -737,7 +737,7 @@ func (container *Container) CreateDaemonEnvironment(tty bool, linkedEnv []string
 	// Figure out what size slice we need so we can allocate this all at once.
 	envSize := len(container.Config.Env)
 	if runtime.GOOS != "windows" {
-		envSize += 2 + len(linkedEnv)
+		envSize += 2
 	}
 	if tty {
 		envSize++
@@ -750,7 +750,6 @@ func (container *Container) CreateDaemonEnvironment(tty bool, linkedEnv []string
 		if tty {
 			env = append(env, "TERM=xterm")
 		}
-		env = append(env, linkedEnv...)
 	}
 
 	// because the env on the container can override certain default values

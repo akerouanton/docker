@@ -13,51 +13,16 @@ import (
 	"github.com/containerd/log"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
-	"github.com/docker/docker/daemon/links"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/libnetwork"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/process"
 	"github.com/docker/docker/pkg/stringid"
-	"github.com/docker/docker/runconfig"
 	"github.com/moby/sys/mount"
 	"github.com/opencontainers/selinux/go-selinux/label"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
-
-func (daemon *Daemon) setupLinkedContainers(container *container.Container) ([]string, error) {
-	var env []string
-	children := daemon.children(container)
-
-	bridgeSettings := container.NetworkSettings.Networks[runconfig.DefaultDaemonNetworkMode().NetworkName()]
-	if bridgeSettings == nil || bridgeSettings.EndpointSettings == nil {
-		return nil, nil
-	}
-
-	for linkAlias, child := range children {
-		if !child.IsRunning() {
-			return nil, fmt.Errorf("Cannot link to a non running container: %s AS %s", child.Name, linkAlias)
-		}
-
-		childBridgeSettings := child.NetworkSettings.Networks[runconfig.DefaultDaemonNetworkMode().NetworkName()]
-		if childBridgeSettings == nil || childBridgeSettings.EndpointSettings == nil {
-			return nil, fmt.Errorf("container %s not attached to default bridge network", child.ID)
-		}
-
-		link := links.NewLink(
-			bridgeSettings.IPAddress,
-			childBridgeSettings.IPAddress,
-			linkAlias,
-			child.Config.Env,
-			child.Config.ExposedPorts,
-		)
-
-		env = append(env, link.ToEnv()...)
-	}
-
-	return env, nil
-}
 
 func (daemon *Daemon) getIPCContainer(id string) (*container.Container, error) {
 	// Check if the container exists, is running, and not restarting

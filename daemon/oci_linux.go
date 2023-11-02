@@ -727,10 +727,6 @@ func withCommonOptions(daemon *Daemon, daemonCfg *dconfig.Config, c *container.C
 		if c.BaseFS == "" {
 			return errors.New("populateCommonSpec: BaseFS of container " + c.ID + " is unexpectedly empty")
 		}
-		linkedEnv, err := daemon.setupLinkedContainers(c)
-		if err != nil {
-			return err
-		}
 		s.Root = &specs.Root{
 			Path:     c.BaseFS,
 			Readonly: c.HostConfig.ReadonlyRootfs,
@@ -767,7 +763,7 @@ func withCommonOptions(daemon *Daemon, daemonCfg *dconfig.Config, c *container.C
 			}
 		}
 		s.Process.Cwd = cwd
-		s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
+		s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty)
 		s.Process.Terminal = c.Config.Tty
 
 		s.Hostname = c.Config.Hostname

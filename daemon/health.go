@@ -80,12 +80,7 @@ func (p *cmdProbe) run(ctx context.Context, d *Daemon, cntr *container.Container
 	execConfig.Privileged = false
 	execConfig.User = cntr.Config.User
 	execConfig.WorkingDir = cntr.Config.WorkingDir
-
-	linkedEnv, err := d.setupLinkedContainers(cntr)
-	if err != nil {
-		return nil, err
-	}
-	execConfig.Env = container.ReplaceOrAppendEnvValues(cntr.CreateDaemonEnvironment(execConfig.Tty, linkedEnv), execConfig.Env)
+	execConfig.Env = container.ReplaceOrAppendEnvValues(cntr.CreateDaemonEnvironment(execConfig.Tty), execConfig.Env)
 
 	d.registerExecCommand(cntr, execConfig)
 	d.LogContainerEventWithAttributes(cntr, events.Action(string(events.ActionExecCreate)+": "+execConfig.Entrypoint+" "+strings.Join(execConfig.Args, " ")), map[string]string{
