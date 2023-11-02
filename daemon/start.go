@@ -102,7 +102,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, daemonCfg *configStore
 			// if containers AutoRemove flag is set, remove it after clean up
 			if container.HostConfig.AutoRemove {
 				container.Unlock()
-				if err := daemon.containerRm(&daemonCfg.Config, container.ID, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true}); err != nil {
+				if err := daemon.containerRm(container.ID, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true}); err != nil {
 					log.G(ctx).Errorf("can't remove container %s: %v", container.ID, err)
 				}
 				container.Lock()

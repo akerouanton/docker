@@ -9,7 +9,6 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/container"
-	"github.com/docker/docker/daemon/config"
 	"github.com/docker/docker/errdefs"
 	libcontainerdtypes "github.com/docker/docker/libcontainerd/types"
 	"github.com/docker/docker/restartmanager"
@@ -30,8 +29,6 @@ func (daemon *Daemon) setStateCounter(c *container.Container) {
 func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontainerdtypes.EventInfo) error {
 	var exitStatus container.ExitStatus
 	c.Lock()
-
-	cfg := daemon.config()
 
 	// Health checks will be automatically restarted if/when the
 	// container is started again.
@@ -103,7 +100,7 @@ func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontaine
 	} else {
 		c.SetStopped(&exitStatus)
 		if !c.HasBeenManuallyRestarted {
-			defer daemon.autoRemove(&cfg.Config, c)
+			defer daemon.autoRemove(c)
 		}
 	}
 	defer c.Unlock() // needs to be called before autoRemove
@@ -136,7 +133,7 @@ func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontaine
 				daemon.setStateCounter(c)
 				c.CheckpointTo(daemon.containersReplica)
 				c.Unlock()
-				defer daemon.autoRemove(&cfg.Config, c)
+				defer daemon.autoRemove(c)
 				if err != restartmanager.ErrRestartCanceled {
 					log.G(ctx).Errorf("restartmanger wait error: %+v", err)
 				}
@@ -298,7 +295,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 	return nil
 }
 
-func (daemon *Daemon) autoRemove(cfg *config.Config, c *container.Container) {
+func (daemon *Daemon) autoRemove(c *container.Container) {
 	c.Lock()
 	ar := c.HostConfig.AutoRemove
 	c.Unlock()
@@ -306,7 +303,7 @@ func (daemon *Daemon) autoRemove(cfg *config.Config, c *container.Container) {
 		return
 	}
 
-	err := daemon.containerRm(cfg, c.ID, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true})
+	err := daemon.containerRm(c.ID, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true})
 	if err == nil {
 		return
 	}

@@ -618,7 +618,7 @@ func (daemon *Daemon) restore(cfg *configStore) error {
 		go func(cid string) {
 			_ = sem.Acquire(context.Background(), 1)
 
-			if err := daemon.containerRm(&cfg.Config, cid, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true}); err != nil {
+			if err := daemon.containerRm(cid, &backend.ContainerRmConfig{ForceRemove: true, RemoveVolume: true}); err != nil {
 				log.G(context.TODO()).WithField("container", cid).WithError(err).Error("failed to remove container")
 			}
 
