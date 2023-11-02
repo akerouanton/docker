@@ -16,7 +16,6 @@ import (
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/netutils"
-	"github.com/docker/docker/libnetwork/options"
 	"github.com/docker/docker/libnetwork/portallocator"
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/vishvananda/netlink"
@@ -36,10 +35,6 @@ func TestEndpointMarshalling(t *testing.T) {
 		macAddress: mac,
 		srcName:    "veth123456",
 		config:     &endpointConfiguration{MacAddress: mac},
-		containerConfig: &containerConfiguration{
-			ParentEndpoints: []string{"one", "due", "three"},
-			ChildEndpoints:  []string{"four", "five", "six"},
-		},
 		extConnConfig: &connectivityConfiguration{
 			ExposedPorts: []types.TransportPort{
 				{
@@ -91,7 +86,6 @@ func TestEndpointMarshalling(t *testing.T) {
 	if e.id != ee.id || e.nid != ee.nid || e.srcName != ee.srcName || !bytes.Equal(e.macAddress, ee.macAddress) ||
 		!types.CompareIPNet(e.addr, ee.addr) || !types.CompareIPNet(e.addrv6, ee.addrv6) ||
 		!compareEpConfig(e.config, ee.config) ||
-		!compareContainerConfig(e.containerConfig, ee.containerConfig) ||
 		!compareConnConfig(e.extConnConfig, ee.extConnConfig) ||
 		!compareBindings(e.portMapping, ee.portMapping) {
 		t.Fatalf("JSON marsh/unmarsh failed.\nOriginal:\n%#v\nDecoded:\n%#v", e, ee)
@@ -106,30 +100,6 @@ func compareEpConfig(a, b *endpointConfiguration) bool {
 		return false
 	}
 	return bytes.Equal(a.MacAddress, b.MacAddress)
-}
-
-func compareContainerConfig(a, b *containerConfiguration) bool {
-	if a == b {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	if len(a.ParentEndpoints) != len(b.ParentEndpoints) ||
-		len(a.ChildEndpoints) != len(b.ChildEndpoints) {
-		return false
-	}
-	for i := 0; i < len(a.ParentEndpoints); i++ {
-		if a.ParentEndpoints[i] != b.ParentEndpoints[i] {
-			return false
-		}
-	}
-	for i := 0; i < len(a.ChildEndpoints); i++ {
-		if a.ChildEndpoints[i] != b.ChildEndpoints[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func compareConnConfig(a, b *connectivityConfiguration) bool {
@@ -744,173 +714,11 @@ func testQueryEndpointInfo(t *testing.T, ulPxyEnabled bool) {
 	}
 }
 
-func getExposedPorts() []types.TransportPort {
-	return []types.TransportPort{
-		{Proto: types.TCP, Port: uint16(5000)},
-		{Proto: types.UDP, Port: uint16(400)},
-		{Proto: types.TCP, Port: uint16(600)},
-	}
-}
-
 func getPortMapping() []types.PortBinding {
 	return []types.PortBinding{
 		{Proto: types.TCP, Port: uint16(230), HostPort: uint16(23000)},
 		{Proto: types.UDP, Port: uint16(200), HostPort: uint16(22000)},
 		{Proto: types.TCP, Port: uint16(120), HostPort: uint16(12000)},
-	}
-}
-
-func TestLinkContainers(t *testing.T) {
-	defer netnsutils.SetupTestOSContext(t)()
-
-	d := newDriver()
-	iptable := iptables.GetIptable(iptables.IPv4)
-
-	config := &configuration{
-		EnableIPTables: true,
-	}
-	genericOption := make(map[string]interface{})
-	genericOption[netlabel.GenericData] = config
-
-	if err := d.configure(genericOption); err != nil {
-		t.Fatalf("Failed to setup driver config: %v", err)
-	}
-
-	netconfig := &networkConfiguration{
-		BridgeName: DefaultBridgeName,
-		EnableICC:  false,
-	}
-	genericOption = make(map[string]interface{})
-	genericOption[netlabel.GenericData] = netconfig
-
-	ipdList := getIPv4Data(t)
-	err := d.CreateNetwork("net1", genericOption, nil, ipdList, nil)
-	if err != nil {
-		t.Fatalf("Failed to create bridge: %v", err)
-	}
-
-	te1 := newTestEndpoint(ipdList[0].Pool, 11)
-	err = d.CreateEndpoint("net1", "ep1", te1.Interface(), nil)
-	if err != nil {
-		t.Fatalf("Failed to create an endpoint : %s", err.Error())
-	}
-
-	exposedPorts := getExposedPorts()
-	sbOptions := make(map[string]interface{})
-	sbOptions[netlabel.ExposedPorts] = exposedPorts
-
-	err = d.Join("net1", "ep1", "sbox", te1, sbOptions)
-	if err != nil {
-		t.Fatalf("Failed to join the endpoint: %v", err)
-	}
-
-	err = d.ProgramExternalConnectivity("net1", "ep1", sbOptions)
-	if err != nil {
-		t.Fatalf("Failed to program external connectivity: %v", err)
-	}
-
-	addr1 := te1.iface.addr
-	if addr1.IP.To4() == nil {
-		t.Fatal("No Ipv4 address assigned to the endpoint:  ep1")
-	}
-
-	te2 := newTestEndpoint(ipdList[0].Pool, 22)
-	err = d.CreateEndpoint("net1", "ep2", te2.Interface(), nil)
-	if err != nil {
-		t.Fatalf("Failed to create an endpoint : %s", err.Error())
-	}
-
-	addr2 := te2.iface.addr
-	if addr2.IP.To4() == nil {
-		t.Fatal("No Ipv4 address assigned to the endpoint:  ep2")
-	}
-
-	sbOptions = make(map[string]interface{})
-	sbOptions[netlabel.GenericData] = options.Generic{
-		"ChildEndpoints": []string{"ep1"},
-	}
-
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
-	if err != nil {
-		t.Fatal("Failed to link ep1 and ep2")
-	}
-
-	err = d.ProgramExternalConnectivity("net1", "ep2", sbOptions)
-	if err != nil {
-		t.Fatalf("Failed to program external connectivity: %v", err)
-	}
-
-	out, _ := iptable.Raw("-L", DockerChain)
-	for _, pm := range exposedPorts {
-		regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
-		re := regexp.MustCompile(regex)
-		matches := re.FindAllString(string(out[:]), -1)
-		if len(matches) != 1 {
-			t.Fatalf("IP Tables programming failed %s", string(out[:]))
-		}
-
-		regex = fmt.Sprintf("%s spt:%d", pm.Proto.String(), pm.Port)
-		matched, _ := regexp.MatchString(regex, string(out[:]))
-		if !matched {
-			t.Fatalf("IP Tables programming failed %s", string(out[:]))
-		}
-	}
-
-	err = d.RevokeExternalConnectivity("net1", "ep2")
-	if err != nil {
-		t.Fatalf("Failed to revoke external connectivity: %v", err)
-	}
-
-	err = d.Leave("net1", "ep2")
-	if err != nil {
-		t.Fatal("Failed to unlink ep1 and ep2")
-	}
-
-	out, _ = iptable.Raw("-L", DockerChain)
-	for _, pm := range exposedPorts {
-		regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
-		re := regexp.MustCompile(regex)
-		matches := re.FindAllString(string(out[:]), -1)
-		if len(matches) != 0 {
-			t.Fatalf("Leave should have deleted relevant IPTables rules  %s", string(out[:]))
-		}
-
-		regex = fmt.Sprintf("%s spt:%d", pm.Proto.String(), pm.Port)
-		matched, _ := regexp.MatchString(regex, string(out[:]))
-		if matched {
-			t.Fatalf("Leave should have deleted relevant IPTables rules  %s", string(out[:]))
-		}
-	}
-
-	// Error condition test with an invalid endpoint-id "ep4"
-	sbOptions = make(map[string]interface{})
-	sbOptions[netlabel.GenericData] = options.Generic{
-		"ChildEndpoints": []string{"ep1", "ep4"},
-	}
-
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = d.ProgramExternalConnectivity("net1", "ep2", sbOptions)
-	if err != nil {
-		out, _ = iptable.Raw("-L", DockerChain)
-		for _, pm := range exposedPorts {
-			regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
-			re := regexp.MustCompile(regex)
-			matches := re.FindAllString(string(out[:]), -1)
-			if len(matches) != 0 {
-				t.Fatalf("Error handling should rollback relevant IPTables rules  %s", string(out[:]))
-			}
-
-			regex = fmt.Sprintf("%s spt:%d", pm.Proto.String(), pm.Port)
-			matched, _ := regexp.MatchString(regex, string(out[:]))
-			if matched {
-				t.Fatalf("Error handling should rollback relevant IPTables rules  %s", string(out[:]))
-			}
-		}
-	} else {
-		t.Fatal("Expected Join to fail given link conditions are not satisfied")
 	}
 }
 

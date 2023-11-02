@@ -124,7 +124,7 @@ func (sb *Sandbox) buildHostsFile() error {
 		return err
 	}
 
-	return sb.updateParentHosts()
+	return nil
 }
 
 func (sb *Sandbox) updateHostsFile(ifaceIPs []string) error {
@@ -177,35 +177,6 @@ func (sb *Sandbox) deleteHostsEntries(recs []etchosts.Record) {
 	if err := etchosts.Delete(sb.config.hostsPath, recs); err != nil {
 		log.G(context.TODO()).Warnf("Failed deleting service host entries to the running container: %v", err)
 	}
-}
-
-func (sb *Sandbox) updateParentHosts() error {
-	var pSb *Sandbox
-
-	for _, update := range sb.config.parentUpdates {
-		// TODO(thaJeztah): was it intentional for this loop to re-use prior results of pSB? If not, we should make pSb local and always replace here.
-		if s, _ := sb.controller.GetSandbox(update.cid); s != nil {
-			pSb = s
-		}
-		if pSb == nil {
-			continue
-		}
-		// TODO(robmry) - filter out IPv6 addresses here if !sb.ipv6Enabled() but...
-		// - this is part of the implementation of '--link', which will be removed along
-		//   with the rest of legacy networking.
-		// - IPv6 addresses shouldn't be allocated if IPv6 is not available in a container,
-		//   and that change will come along later.
-		// - I think this may be dead code, it's not possible to start a parent container with
-		//   '--link child' unless the child has already started ("Error response from daemon:
-		//   Cannot link to a non running container"). So, when the child starts and this method
-		//   is called with updates for parents, the parents aren't running and GetSandbox()
-		//   returns nil.)
-		if err := etchosts.Update(pSb.config.hostsPath, update.ip, update.name); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (sb *Sandbox) restorePath() {

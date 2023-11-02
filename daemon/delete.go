@@ -63,7 +63,7 @@ func (daemon *Daemon) rmLink(cfg *config.Config, container *container.Container,
 	if name[0] != '/' {
 		name = "/" + name
 	}
-	parent, n := path.Split(name)
+	parent, _ := path.Split(name)
 	if parent == "/" {
 		return fmt.Errorf("Conflict, cannot remove the default link name of the container")
 	}
@@ -78,9 +78,6 @@ func (daemon *Daemon) rmLink(cfg *config.Config, container *container.Container,
 	parentContainer, _ := daemon.GetContainer(pe)
 	if parentContainer != nil {
 		daemon.linkIndex.unlink(name, container, parentContainer)
-		if err := daemon.updateNetwork(cfg, parentContainer); err != nil {
-			log.G(context.TODO()).Debugf("Could not update network to remove link %s: %v", n, err)
-		}
 	}
 	return nil
 }

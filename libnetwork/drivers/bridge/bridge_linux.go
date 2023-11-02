@@ -96,12 +96,6 @@ type endpointConfiguration struct {
 	MacAddress net.HardwareAddr
 }
 
-// containerConfiguration represents the user specified configuration for a container
-type containerConfiguration struct {
-	ParentEndpoints []string
-	ChildEndpoints  []string
-}
-
 // connectivityConfiguration represents the user specified configuration regarding the external connectivity
 type connectivityConfiguration struct {
 	PortBindings []types.PortBinding
@@ -109,18 +103,17 @@ type connectivityConfiguration struct {
 }
 
 type bridgeEndpoint struct {
-	id              string
-	nid             string
-	srcName         string
-	addr            *net.IPNet
-	addrv6          *net.IPNet
-	macAddress      net.HardwareAddr
-	config          *endpointConfiguration // User specified parameters
-	containerConfig *containerConfiguration
-	extConnConfig   *connectivityConfiguration
-	portMapping     []types.PortBinding // Operation port bindings
-	dbIndex         uint64
-	dbExists        bool
+	id            string
+	nid           string
+	srcName       string
+	addr          *net.IPNet
+	addrv6        *net.IPNet
+	macAddress    net.HardwareAddr
+	config        *endpointConfiguration // User specified parameters
+	extConnConfig *connectivityConfiguration
+	portMapping   []types.PortBinding // Operation port bindings
+	dbIndex       uint64
+	dbExists      bool
 }
 
 type bridgeNetwork struct {
@@ -1245,11 +1238,6 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		return EndpointNotFoundError(eid)
 	}
 
-	endpoint.containerConfig, err = parseContainerOptions(options)
-	if err != nil {
-		return err
-	}
-
 	iNames := jinfo.InterfaceName()
 	containerVethPrefix := defaultContainerVethPrefix
 	if network.config.ContainerIfacePrefix != "" {
@@ -1285,12 +1273,6 @@ func (d *driver) Leave(nid, eid string) error {
 
 	if endpoint == nil {
 		return EndpointNotFoundError(eid)
-	}
-
-	if !network.config.EnableICC {
-		if err = d.link(network, endpoint, false); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -1340,10 +1322,6 @@ func (d *driver) ProgramExternalConnectivity(nid, eid string, options map[string
 		return fmt.Errorf("failed to update bridge endpoint %.7s to store: %v", endpoint.id, err)
 	}
 
-	if !network.config.EnableICC {
-		return d.link(network, endpoint, true)
-	}
-
 	return nil
 }
 
@@ -1381,80 +1359,6 @@ func (d *driver) RevokeExternalConnectivity(nid, eid string) error {
 	return nil
 }
 
-func (d *driver) link(network *bridgeNetwork, endpoint *bridgeEndpoint, enable bool) (retErr error) {
-	cc := endpoint.containerConfig
-	ec := endpoint.extConnConfig
-	if cc == nil || ec == nil || (len(cc.ParentEndpoints) == 0 && len(cc.ChildEndpoints) == 0) {
-		// nothing to do
-		return nil
-	}
-
-	// Try to keep things atomic. addedLinks keeps track of links that were
-	// successfully added. If any error occurred, then roll back all.
-	var addedLinks []*link
-	defer func() {
-		if retErr == nil {
-			return
-		}
-		for _, l := range addedLinks {
-			l.Disable()
-		}
-	}()
-
-	if ec.ExposedPorts != nil {
-		for _, p := range cc.ParentEndpoints {
-			parentEndpoint, err := network.getEndpoint(p)
-			if err != nil {
-				return err
-			}
-			if parentEndpoint == nil {
-				return InvalidEndpointIDError(p)
-			}
-
-			l, err := newLink(parentEndpoint.addr.IP, endpoint.addr.IP, ec.ExposedPorts, network.config.BridgeName)
-			if err != nil {
-				return err
-			}
-			if enable {
-				if err := l.Enable(); err != nil {
-					return err
-				}
-				addedLinks = append(addedLinks, l)
-			} else {
-				l.Disable()
-			}
-		}
-	}
-
-	for _, c := range cc.ChildEndpoints {
-		childEndpoint, err := network.getEndpoint(c)
-		if err != nil {
-			return err
-		}
-		if childEndpoint == nil {
-			return InvalidEndpointIDError(c)
-		}
-		if childEndpoint.extConnConfig == nil || childEndpoint.extConnConfig.ExposedPorts == nil {
-			continue
-		}
-
-		l, err := newLink(endpoint.addr.IP, childEndpoint.addr.IP, childEndpoint.extConnConfig.ExposedPorts, network.config.BridgeName)
-		if err != nil {
-			return err
-		}
-		if enable {
-			if err := l.Enable(); err != nil {
-				return err
-			}
-			addedLinks = append(addedLinks, l)
-		} else {
-			l.Disable()
-		}
-	}
-
-	return nil
-}
-
 func (d *driver) Type() string {
 	return NetworkType
 }
@@ -1479,28 +1383,6 @@ func parseEndpointOptions(epOptions map[string]interface{}) (*endpointConfigurat
 	}
 
 	return ec, nil
-}
-
-func parseContainerOptions(cOptions map[string]interface{}) (*containerConfiguration, error) {
-	if cOptions == nil {
-		return nil, nil
-	}
-	genericData := cOptions[netlabel.GenericData]
-	if genericData == nil {
-		return nil, nil
-	}
-	switch opt := genericData.(type) {
-	case options.Generic:
-		opaqueConfig, err := options.GenerateFromModel(opt, &containerConfiguration{})
-		if err != nil {
-			return nil, err
-		}
-		return opaqueConfig.(*containerConfiguration), nil
-	case *containerConfiguration:
-		return opt, nil
-	default:
-		return nil, nil
-	}
 }
 
 func parseConnectivityOptions(cOptions map[string]interface{}) (*connectivityConfiguration, error) {

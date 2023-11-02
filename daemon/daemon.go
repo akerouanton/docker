@@ -712,12 +712,6 @@ func (daemon *Daemon) children(c *container.Container) map[string]*container.Con
 	return daemon.linkIndex.children(c)
 }
 
-// parents returns the names of the parent containers of the container
-// with the given name.
-func (daemon *Daemon) parents(c *container.Container) map[string]*container.Container {
-	return daemon.linkIndex.parents(c)
-}
-
 func (daemon *Daemon) registerLink(parent, child *container.Container, alias string) error {
 	fullName := path.Join(parent.Name, alias)
 	if err := daemon.containersReplica.ReserveName(fullName, child.ID); err != nil {

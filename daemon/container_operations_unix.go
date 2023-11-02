@@ -400,12 +400,6 @@ func killProcessDirectly(container *container.Container) error {
 	return nil
 }
 
-func isLinkable(child *container.Container) bool {
-	// A container is linkable only if it belongs to the default network
-	_, ok := child.NetworkSettings.Networks[runconfig.DefaultDaemonNetworkMode().NetworkName()]
-	return ok
-}
-
 func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Config, sboxOptions *[]libnetwork.SandboxOption) error {
 	var err error
 

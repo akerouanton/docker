@@ -67,13 +67,6 @@ type hostsPathConfig struct {
 	hostsPath       string
 	originHostsPath string
 	extraHosts      []extraHost
-	parentUpdates   []parentUpdate
-}
-
-type parentUpdate struct {
-	cid  string
-	name string
-	ip   string
 }
 
 type extraHost struct {

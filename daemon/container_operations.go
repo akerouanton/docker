@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path"
 	"strings"
 	"time"
 
@@ -24,8 +23,6 @@ import (
 	"github.com/docker/docker/internal/multierror"
 	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork"
-	"github.com/docker/docker/libnetwork/netlabel"
-	"github.com/docker/docker/libnetwork/options"
 	"github.com/docker/docker/libnetwork/scope"
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/docker/docker/opts"
@@ -153,63 +150,6 @@ func (daemon *Daemon) buildSandboxOptions(cfg *config.Config, container *contain
 
 	sboxOptions = append(sboxOptions, libnetwork.OptionPortMapping(publishedPorts), libnetwork.OptionExposedPorts(exposedPorts))
 
-	// Legacy Link feature is supported only for the default bridge network.
-	// return if this call to build join options is not for default bridge network
-	// Legacy Link is only supported by docker run --link
-	defaultNetName := runconfig.DefaultDaemonNetworkMode().NetworkName()
-	bridgeSettings, ok := container.NetworkSettings.Networks[defaultNetName]
-	if !ok || bridgeSettings.EndpointSettings == nil || bridgeSettings.EndpointID == "" {
-		return sboxOptions, nil
-	}
-
-	var (
-		childEndpoints []string
-		cEndpointID    string
-	)
-	for linkAlias, child := range daemon.children(container) {
-		if !isLinkable(child) {
-			return nil, fmt.Errorf("Cannot link to %s, as it does not belong to the default network", child.Name)
-		}
-		_, alias := path.Split(linkAlias)
-		// allow access to the linked container via the alias, real name, and container hostname
-		aliasList := alias + " " + child.Config.Hostname
-		// only add the name if alias isn't equal to the name
-		if alias != child.Name[1:] {
-			aliasList = aliasList + " " + child.Name[1:]
-		}
-		defaultNW := child.NetworkSettings.Networks[defaultNetName]
-		if defaultNW.IPAddress != "" {
-			sboxOptions = append(sboxOptions, libnetwork.OptionExtraHost(aliasList, defaultNW.IPAddress))
-		}
-		if defaultNW.GlobalIPv6Address != "" {
-			sboxOptions = append(sboxOptions, libnetwork.OptionExtraHost(aliasList, defaultNW.GlobalIPv6Address))
-		}
-		cEndpointID = defaultNW.EndpointID
-		if cEndpointID != "" {
-			childEndpoints = append(childEndpoints, cEndpointID)
-		}
-	}
-
-	var parentEndpoints []string
-	for alias, parent := range daemon.parents(container) {
-		if cfg.DisableBridge || !container.HostConfig.NetworkMode.IsPrivate() {
-			continue
-		}
-
-		_, alias = path.Split(alias)
-		log.G(context.TODO()).Debugf("Update /etc/hosts of %s for alias %s with ip %s", parent.ID, alias, bridgeSettings.IPAddress)
-		sboxOptions = append(sboxOptions, libnetwork.OptionParentUpdate(parent.ID, alias, bridgeSettings.IPAddress))
-		if cEndpointID != "" {
-			parentEndpoints = append(parentEndpoints, cEndpointID)
-		}
-	}
-
-	sboxOptions = append(sboxOptions, libnetwork.OptionGeneric(options.Generic{
-		netlabel.GenericData: options.Generic{
-			"ParentEndpoints": parentEndpoints,
-			"ChildEndpoints":  childEndpoints,
-		},
-	}))
 	return sboxOptions, nil
 }
 
@@ -267,52 +207,6 @@ func (daemon *Daemon) updateEndpointNetworkSettings(cfg *config.Config, containe
 	if container.HostConfig.NetworkMode == runconfig.DefaultDaemonNetworkMode() {
 		container.NetworkSettings.Bridge = cfg.BridgeConfig.Iface
 	}
-
-	return nil
-}
-
-// UpdateNetwork is used to update the container's network (e.g. when linked containers
-// get removed/unlinked).
-func (daemon *Daemon) updateNetwork(cfg *config.Config, container *container.Container) error {
-	var (
-		start = time.Now()
-		ctrl  = daemon.netController
-		sid   = container.NetworkSettings.SandboxID
-	)
-
-	sb, err := ctrl.SandboxByID(sid)
-	if err != nil {
-		return fmt.Errorf("error locating sandbox id %s: %v", sid, err)
-	}
-
-	// Find if container is connected to the default bridge network
-	var n *libnetwork.Network
-	for name, v := range container.NetworkSettings.Networks {
-		sn, err := daemon.FindNetwork(getNetworkID(name, v.EndpointSettings))
-		if err != nil {
-			continue
-		}
-		if sn.Name() == runconfig.DefaultDaemonNetworkMode().NetworkName() {
-			n = sn
-			break
-		}
-	}
-
-	if n == nil {
-		// Not connected to the default bridge network; Nothing to do
-		return nil
-	}
-
-	sbOptions, err := daemon.buildSandboxOptions(cfg, container)
-	if err != nil {
-		return fmt.Errorf("Update network failed: %v", err)
-	}
-
-	if err := sb.Refresh(sbOptions...); err != nil {
-		return fmt.Errorf("Update network failed: Failure in refresh sandbox %s: %v", sid, err)
-	}
-
-	networkActions.WithValues("update").UpdateSince(start)
 
 	return nil
 }

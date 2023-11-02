@@ -99,47 +99,6 @@ func TestForward(t *testing.T) {
 	}
 }
 
-func TestLink(t *testing.T) {
-	iptable, _, filterChain := createNewChain(t)
-	ip1 := net.ParseIP("192.168.1.1")
-	ip2 := net.ParseIP("192.168.1.2")
-	port := 1234
-	proto := "tcp"
-
-	err := filterChain.Link(Append, ip1, ip2, port, proto, bridgeName)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rule1 := []string{
-		"-i", bridgeName,
-		"-o", bridgeName,
-		"-p", proto,
-		"-s", ip1.String(),
-		"-d", ip2.String(),
-		"--dport", strconv.Itoa(port),
-		"-j", "ACCEPT",
-	}
-
-	if !iptable.Exists(filterChain.Table, filterChain.Name, rule1...) {
-		t.Fatal("rule1 does not exist")
-	}
-
-	rule2 := []string{
-		"-i", bridgeName,
-		"-o", bridgeName,
-		"-p", proto,
-		"-s", ip2.String(),
-		"-d", ip1.String(),
-		"--sport", strconv.Itoa(port),
-		"-j", "ACCEPT",
-	}
-
-	if !iptable.Exists(filterChain.Table, filterChain.Name, rule2...) {
-		t.Fatal("rule2 does not exist")
-	}
-}
-
 func TestPrerouting(t *testing.T) {
 	iptable, natChain, _ := createNewChain(t)
 

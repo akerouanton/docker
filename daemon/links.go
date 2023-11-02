@@ -59,22 +59,6 @@ func (l *linkIndex) children(parent *container.Container) map[string]*container.
 	return children
 }
 
-// parents maps all the aliases->parent for the passed in child
-// aliases here are the aliases the parents use to refer to the child
-func (l *linkIndex) parents(child *container.Container) map[string]*container.Container {
-	l.mu.Lock()
-
-	parents := make(map[string]*container.Container)
-	for parent, aliases := range l.childIdx[child] {
-		for alias := range aliases {
-			parents[alias] = parent
-		}
-	}
-
-	l.mu.Unlock()
-	return parents
-}
-
 // delete deletes all link relationships referencing this container
 func (l *linkIndex) delete(container *container.Container) []string {
 	l.mu.Lock()

@@ -382,29 +382,6 @@ func (c *ChainInfo) Forward(action Action, ip net.IP, port int, proto, destAddr 
 	return nil
 }
 
-// Link adds reciprocal ACCEPT rule for two supplied IP addresses.
-// Traffic is allowed from ip1 to ip2 and vice-versa
-func (c *ChainInfo) Link(action Action, ip1, ip2 net.IP, port int, proto string, bridgeName string) error {
-	iptable := GetIptable(c.IPVersion)
-	// forward
-	args := []string{
-		"-i", bridgeName, "-o", bridgeName,
-		"-p", proto,
-		"-s", ip1.String(),
-		"-d", ip2.String(),
-		"--dport", strconv.Itoa(port),
-		"-j", "ACCEPT",
-	}
-
-	if err := iptable.ProgramRule(Filter, c.Name, action, args); err != nil {
-		return err
-	}
-	// reverse
-	args[7], args[9] = args[9], args[7]
-	args[10] = "--sport"
-	return iptable.ProgramRule(Filter, c.Name, action, args)
-}
-
 // ProgramRule adds the rule specified by args only if the
 // rule is not already present in the chain. Reciprocally,
 // it removes the rule only if present.
