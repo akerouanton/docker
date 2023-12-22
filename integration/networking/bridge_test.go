@@ -173,7 +173,7 @@ func TestBridgeICC(t *testing.T) {
 					inspect := container.Inspect(ctx, t, c, id1)
 					pingHost = inspect.NetworkSettings.Networks[bridgeName].GlobalIPv6Address + "%eth0"
 				} else {
-					pingHost = ctr1Name
+					pingHost = ctr1Name + "."
 				}
 			}
 
