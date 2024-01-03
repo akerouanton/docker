@@ -154,10 +154,6 @@ func isLinkable(child *container.Container) bool {
 	return false
 }
 
-func enableIPOnPredefinedNetwork() bool {
-	return true
-}
-
 func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Config, sboxOptions *[]libnetwork.SandboxOption) error {
 	return nil
 }

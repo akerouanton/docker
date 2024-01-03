@@ -572,6 +572,7 @@ func (daemon *Daemon) allocateNetwork(cfg *config.Config, container *container.C
 
 // validateEndpointSettings checks whether the given epConfig is valid. The nw parameter can be nil, in which case it
 // won't try to check if the endpoint IP addresses are within network's subnets.
+// TODO(aker): move this validation into api/types/network/endpoint.go
 func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *networktypes.EndpointSettings) error {
 	if epConfig == nil {
 		return nil
@@ -584,16 +585,11 @@ func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *n
 
 	var errs []error
 
-	// TODO(aker): move this into api/types/network/endpoint.go once enableIPOnPredefinedNetwork and
-	//  serviceDiscoveryOnDefaultNetwork are removed.
-	if !containertypes.NetworkMode(nwName).IsUserDefined() {
-		hasStaticAddresses := ipamConfig.IPv4Address != "" || ipamConfig.IPv6Address != ""
+	if !containertypes.NetworkMode(nwName).IsUserDefined() && !containertypes.NetworkMode(nwName).IsBridge() && !containertypes.NetworkMode(nwName).IsDefault() {
 		// On Linux, user specified IP address is accepted only by networks with user specified subnets.
-		if hasStaticAddresses && !enableIPOnPredefinedNetwork() {
+		if ipamConfig.IPv4Address != "" || ipamConfig.IPv6Address != "" {
 			errs = append(errs, runconfig.ErrUnsupportedNetworkAndIP)
 		}
-	}
-	if !containertypes.NetworkMode(nwName).IsUserDefined() && !containertypes.NetworkMode(nwName).IsBridge() && !containertypes.NetworkMode(nwName).IsDefault() {
 		if len(epConfig.Aliases) > 0 {
 			errs = append(errs, runconfig.ErrUnsupportedNetworkAndAlias)
 		}

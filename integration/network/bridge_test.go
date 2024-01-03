@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	networktypes "github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/versions"
 	ctr "github.com/docker/docker/integration/internal/container"
@@ -42,4 +43,16 @@ func TestCreateWithMultiNetworks(t *testing.T) {
 	// interfaces for testnet1 and testnet2, plus lo.
 	ifacesWithAddress := strings.Count(res.Stdout.String(), "\n")
 	assert.Equal(t, ifacesWithAddress, 3)
+}
+
+// TestCreateWithStaticIPOnDefaultBridge makes sure a container can be attached
+// to the default bridge with a static IP address.
+func TestCreateWithStaticIPOnDefaultBridge(t *testing.T) {
+	ctx := setupTest(t)
+	apiClient := testEnv.APIClient()
+
+	defaultSubnet := network.GetSubnet(ctx, t, testEnv, apiClient, "default")
+
+	ctrID := ctr.Create(ctx, t, apiClient, ctr.WithIPv4("default", defaultSubnet.Addr().Next().String()))
+	defer apiClient.ContainerRemove(ctx, ctrID, container.RemoveOptions{})
 }

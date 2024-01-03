@@ -24,8 +24,9 @@ const (
 	// ErrConflictNetworkExposePorts conflict between the expose option and the network mode
 	ErrConflictNetworkExposePorts validationError = "conflicting options: port exposing and the container type network mode"
 	// ErrUnsupportedNetworkAndIP conflict between network mode and requested ip address
-	ErrUnsupportedNetworkAndIP validationError = "user specified IP address is supported on user defined networks only"
+	ErrUnsupportedNetworkAndIP validationError = "user specified IP address is only supported on the default network and on custom networks"
 	// ErrUnsupportedNetworkNoSubnetAndIP conflict between network with no configured subnet and requested ip address
+	// TODO(aker): this error seems unused
 	ErrUnsupportedNetworkNoSubnetAndIP validationError = "user specified IP address is supported only when connecting to networks with user configured subnets"
 	// ErrUnsupportedNetworkAndAlias conflict between network mode and alias
 	ErrUnsupportedNetworkAndAlias validationError = "network-scoped alias is only supported on the default network and on custom networks"

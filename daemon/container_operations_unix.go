@@ -406,11 +406,6 @@ func isLinkable(child *container.Container) bool {
 	return ok
 }
 
-// TODO(aker): remove when we make the default bridge network behave like any other network
-func enableIPOnPredefinedNetwork() bool {
-	return false
-}
-
 func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Config, sboxOptions *[]libnetwork.SandboxOption) error {
 	var err error
 

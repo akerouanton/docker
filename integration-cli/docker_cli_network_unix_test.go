@@ -1294,11 +1294,6 @@ func (s *DockerNetworkSuite) TestDockerNetworkConnectPreferredIP(c *testing.T) {
 	verifyIPAddresses(c, "c0", "n0", "172.28.99.88", "2001:db8:1234::9988")
 	verifyIPAddressConfig(c, "c0", "n1", "172.30.5.44", "2001:db8:abcd::5544")
 	verifyIPAddresses(c, "c0", "n1", "172.30.5.44", "2001:db8:abcd::5544")
-
-	// Still it should fail to connect to the default network with a specified IP (whatever ip)
-	out, _, err := dockerCmdWithError("network", "connect", "--ip", "172.21.55.44", "bridge", "c0")
-	assert.Assert(c, err != nil, "out: %s", out)
-	assert.Assert(c, strings.Contains(out, runconfig.ErrUnsupportedNetworkAndIP.Error()))
 }
 
 func (s *DockerNetworkSuite) TestDockerNetworkConnectPreferredIPStoppedContainer(c *testing.T) {
