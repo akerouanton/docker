@@ -319,6 +319,44 @@ func TestBridgeINC(t *testing.T) {
 	}
 }
 
+func TestServiceDiscoveryOnDefaultBridge(t *testing.T) {
+	ctx := setupTest(t)
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	ctr1Name := sanitizeCtrName(t.Name() + "-ctr1")
+	ctr1 := container.Run(ctx, t, c,
+		container.WithName(ctr1Name),
+		container.WithImage("busybox:latest"),
+		container.WithCmd("top"),
+		// No network mode defined, defaults to "bridge" on Linux and "nat" on Windows
+	)
+	defer c.ContainerRemove(ctx, ctr1, containertypes.RemoveOptions{
+		Force: true,
+	})
+
+	nslookupCmd := []string{"nslookup", "-type=A", ctr1Name}
+
+	attachCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := container.RunAttach(attachCtx, t, c,
+		container.WithImage("busybox:latest"),
+		container.WithCmd(nslookupCmd...),
+		// Network mode "default" is an alias to "bridge" on Linux and "nat" on Windows
+		container.WithNetworkMode("default"),
+	)
+	defer c.ContainerRemove(ctx, res.ContainerID, containertypes.RemoveOptions{
+		Force: true,
+	})
+
+	assert.Check(t, res.ExitCode == 0, "nslookup unexpectedly failed")
+}
+
 func TestDefaultBridgeIPv6(t *testing.T) {
 	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 

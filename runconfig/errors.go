@@ -28,7 +28,7 @@ const (
 	// ErrUnsupportedNetworkNoSubnetAndIP conflict between network with no configured subnet and requested ip address
 	ErrUnsupportedNetworkNoSubnetAndIP validationError = "user specified IP address is supported only when connecting to networks with user configured subnets"
 	// ErrUnsupportedNetworkAndAlias conflict between network mode and alias
-	ErrUnsupportedNetworkAndAlias validationError = "network-scoped alias is supported only for containers in user defined networks"
+	ErrUnsupportedNetworkAndAlias validationError = "network-scoped alias is only supported on the default network and on custom networks"
 	// ErrConflictUTSHostname conflict between the hostname and the UTS mode
 	ErrConflictUTSHostname validationError = "conflicting options: hostname and the UTS mode"
 	// ErrEmptyConfig when container config is nil

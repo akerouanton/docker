@@ -411,12 +411,6 @@ func enableIPOnPredefinedNetwork() bool {
 	return false
 }
 
-// serviceDiscoveryOnDefaultNetwork indicates if service discovery is supported on the default network
-// TODO(aker): remove when we make the default bridge network behave like any other network
-func serviceDiscoveryOnDefaultNetwork() bool {
-	return false
-}
-
 func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Config, sboxOptions *[]libnetwork.SandboxOption) error {
 	var err error
 
@@ -434,10 +428,13 @@ func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Con
 			libnetwork.OptionOriginHostsPath("/etc/hosts"),
 			libnetwork.OptionOriginResolvConfPath("/etc/resolv.conf"),
 		)
-	case container.HostConfig.NetworkMode.IsUserDefined():
-		// The container uses a user-defined network. We use the embedded DNS
-		// server for container name resolution and to act as a DNS forwarder
-		// for external DNS resolution.
+	case container.HostConfig.NetworkMode.IsNone():
+		// For net mode none, no DNS resolution is available at all.
+	default:
+		// The container uses the default bridge or a user-defined network.
+		// Both net modes use the embedded DNS server for container name
+		// resolution and to act as a DNS forwarder for any other DNS names.
+		//
 		// We parse the DNS server(s) that are defined in /etc/resolv.conf on
 		// the host, which may be a local DNS server (for example, if DNSMasq or
 		// systemd-resolvd are in use). The embedded DNS server forwards DNS
@@ -449,22 +446,6 @@ func setupPathsAndSandboxOptions(container *container.Container, cfg *config.Con
 		*sboxOptions = append(
 			*sboxOptions,
 			libnetwork.OptionOriginResolvConfPath("/etc/resolv.conf"),
-		)
-	default:
-		// For other situations, such as the default bridge network, container
-		// discovery / name resolution is handled through /etc/hosts, and no
-		// embedded DNS server is available. Without the embedded DNS, we
-		// cannot use local DNS servers on the host (for example, if DNSMasq or
-		// systemd-resolvd is used). If systemd-resolvd is used, we try to
-		// determine the external DNS servers that are used on the host.
-		// This situation is not ideal, because DNS servers configured in the
-		// container are not updated after the container is created, but the
-		// DNS servers on the host can be dynamically updated.
-		//
-		// Copy the host's resolv.conf for the container (/run/systemd/resolve/resolv.conf or /etc/resolv.conf)
-		*sboxOptions = append(
-			*sboxOptions,
-			libnetwork.OptionOriginResolvConfPath(cfg.GetResolvConf()),
 		)
 	}
 

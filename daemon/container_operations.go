@@ -592,7 +592,9 @@ func validateEndpointSettings(nw *libnetwork.Network, nwName string, epConfig *n
 		if hasStaticAddresses && !enableIPOnPredefinedNetwork() {
 			errs = append(errs, runconfig.ErrUnsupportedNetworkAndIP)
 		}
-		if len(epConfig.Aliases) > 0 && !serviceDiscoveryOnDefaultNetwork() {
+	}
+	if !containertypes.NetworkMode(nwName).IsUserDefined() && !containertypes.NetworkMode(nwName).IsBridge() && !containertypes.NetworkMode(nwName).IsDefault() {
+		if len(epConfig.Aliases) > 0 {
 			errs = append(errs, runconfig.ErrUnsupportedNetworkAndAlias)
 		}
 	}
@@ -649,14 +651,12 @@ func cleanOperationalData(es *network.EndpointSettings) {
 }
 
 func (daemon *Daemon) updateNetworkConfig(container *container.Container, n *libnetwork.Network, endpointConfig *networktypes.EndpointSettings, updateSettings bool) error {
-	// Set up DNS names for a user defined network, and for the default 'nat'
-	// network on Windows (IsBridge() returns true for nat).
-	if containertypes.NetworkMode(n.Name()).IsUserDefined() ||
-		(serviceDiscoveryOnDefaultNetwork() && containertypes.NetworkMode(n.Name()).IsBridge()) {
+	nwName := n.Name()
+	if containertypes.NetworkMode(nwName).IsUserDefined() || containertypes.NetworkMode(nwName).IsBridge() {
 		endpointConfig.DNSNames = buildEndpointDNSNames(container, endpointConfig.Aliases)
 	}
 
-	if err := validateEndpointSettings(n, n.Name(), endpointConfig); err != nil {
+	if err := validateEndpointSettings(n, nwName, endpointConfig); err != nil {
 		return errdefs.InvalidParameter(err)
 	}
 
