@@ -173,15 +173,17 @@ func (i *IpamInfo) UnmarshalJSON(data []byte) error {
 // Network represents a logical connectivity zone that containers may
 // join using the Link method. A network is managed by a specific driver.
 type Network struct {
-	ctrlr            *Controller
-	name             string
-	networkType      string // networkType is the name of the netdriver used by this network
-	id               string
-	created          time.Time
-	scope            string // network data scope
-	labels           map[string]string
-	ipamType         string // ipamType is the name of the IPAM driver
-	ipamOptions      map[string]string
+	ctrlr       *Controller
+	name        string
+	networkType string // networkType is the name of the netdriver used by this network
+	id          string
+	created     time.Time
+	scope       string // network data scope
+	labels      map[string]string
+	ipamType    string // ipamType is the name of the IPAM driver
+	ipamOptions map[string]string
+	// addrSpace denotes whether IPAM allocations come from the pool of local or global subnets (ie. local or swarm).
+	// This value is specific to each IPAM driver and thus opaque to the rest of libnetwork.
 	addrSpace        string
 	ipamV4Config     []*IpamConf
 	ipamV6Config     []*IpamConf
@@ -1486,6 +1488,9 @@ func (n *Network) ipamAllocate() error {
 	}
 
 	if n.addrSpace == "" {
+		// addrSpace is empty when the IPAM allocation first happen on NetworkCreate. Past this point,
+		// [(*Network).ipamAllocate()] is only called when a network is restored from the store (ie. daemon restart).
+		// In such case, addrSpace has already been assigned.
 		if n.addrSpace, err = n.deriveAddressSpace(); err != nil {
 			return err
 		}
