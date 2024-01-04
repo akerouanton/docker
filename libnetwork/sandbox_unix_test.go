@@ -114,7 +114,7 @@ func TestSandboxAddMultiPrio(t *testing.T) {
 	defer netnsutils.SetupTestOSContext(t)()
 
 	opts := [][]NetworkOption{
-		{NetworkOptionEnableIPv6(true), NetworkOptionIpam(ipamapi.DefaultIPAM, "", nil, []*IpamConf{{PreferredPool: "fe90::/64"}}, nil)},
+		{NetworkOptionEnableIPv6(true), NetworkOptionIpam(ipamapi.DefaultIPAM, nil, []*IpamConf{{PreferredPool: "fe90::/64"}}, nil)},
 		{NetworkOptionInternalNetwork()},
 		{},
 	}
@@ -200,7 +200,7 @@ func TestSandboxAddSamePrio(t *testing.T) {
 	opts := [][]NetworkOption{
 		{},
 		{},
-		{NetworkOptionEnableIPv6(true), NetworkOptionIpam(ipamapi.DefaultIPAM, "", nil, []*IpamConf{{PreferredPool: "fe90::/64"}}, nil)},
+		{NetworkOptionEnableIPv6(true), NetworkOptionIpam(ipamapi.DefaultIPAM, nil, []*IpamConf{{PreferredPool: "fe90::/64"}}, nil)},
 		{NetworkOptionInternalNetwork()},
 	}
 

@@ -776,7 +776,7 @@ func NetworkOptionScope(scope string) NetworkOption {
 }
 
 // NetworkOptionIpam function returns an option setter for the ipam configuration for this network
-func NetworkOptionIpam(ipamDriver string, addrSpace string, ipV4 []*IpamConf, ipV6 []*IpamConf, opts map[string]string) NetworkOption {
+func NetworkOptionIpam(ipamDriver string, ipV4 []*IpamConf, ipV6 []*IpamConf, opts map[string]string) NetworkOption {
 	return func(n *Network) {
 		if ipamDriver != "" {
 			n.ipamType = ipamDriver
@@ -785,7 +785,6 @@ func NetworkOptionIpam(ipamDriver string, addrSpace string, ipV4 []*IpamConf, ip
 			}
 		}
 		n.ipamOptions = opts
-		n.addrSpace = addrSpace
 		n.ipamV4Config = ipV4
 		n.ipamV6Config = ipV6
 	}

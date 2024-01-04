@@ -284,7 +284,7 @@ func (daemon *Daemon) initNetworkController(daemonCfg *config.Config, activeSand
 					libnetwork.NetworkOptionGeneric(options.Generic{
 						netlabel.GenericData: netOption,
 					}),
-					libnetwork.NetworkOptionIpam("default", "", v4Conf, v6Conf, nil),
+					libnetwork.NetworkOptionIpam("default", v4Conf, v6Conf, nil),
 				)
 				if err != nil {
 					log.G(context.TODO()).Errorf("Error occurred when creating network %v", err)
@@ -389,7 +389,7 @@ func (daemon *Daemon) initNetworkController(daemonCfg *config.Config, activeSand
 			libnetwork.NetworkOptionGeneric(options.Generic{
 				netlabel.GenericData: netOption,
 			}),
-			libnetwork.NetworkOptionIpam("default", "", v4Conf, v6Conf, nil),
+			libnetwork.NetworkOptionIpam("default", v4Conf, v6Conf, nil),
 		)
 		if err != nil {
 			log.G(context.TODO()).Errorf("Error occurred when creating network %v", err)
@@ -426,7 +426,7 @@ func initBridgeDriver(controller *libnetwork.Controller, config config.BridgeCon
 		ipamV4Conf := libnetwork.IpamConf{PreferredPool: subnetPrefix}
 		v4Conf := []*libnetwork.IpamConf{&ipamV4Conf}
 		v6Conf := []*libnetwork.IpamConf{}
-		ipamOption = libnetwork.NetworkOptionIpam("default", "", v4Conf, v6Conf, nil)
+		ipamOption = libnetwork.NetworkOptionIpam("default", v4Conf, v6Conf, nil)
 	}
 
 	_, err := controller.NewNetwork(string(runconfig.DefaultDaemonNetworkMode()), runconfig.DefaultDaemonNetworkMode().NetworkName(), "",

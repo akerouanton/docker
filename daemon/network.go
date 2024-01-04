@@ -345,7 +345,7 @@ func (daemon *Daemon) createNetwork(cfg *config.Config, create types.NetworkCrea
 		if err != nil {
 			return nil, err
 		}
-		nwOptions = append(nwOptions, libnetwork.NetworkOptionIpam(ipam.Driver, "", v4Conf, v6Conf, ipam.Options))
+		nwOptions = append(nwOptions, libnetwork.NetworkOptionIpam(ipam.Driver, v4Conf, v6Conf, ipam.Options))
 	}
 
 	if create.Internal {

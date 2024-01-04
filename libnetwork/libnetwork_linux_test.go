@@ -65,7 +65,7 @@ func newController(t *testing.T) *libnetwork.Controller {
 func createTestNetwork(c *libnetwork.Controller, networkType, networkName string, netOption options.Generic, ipamV4Configs, ipamV6Configs []*libnetwork.IpamConf) (*libnetwork.Network, error) {
 	return c.NewNetwork(networkType, networkName, "",
 		libnetwork.NetworkOptionGeneric(netOption),
-		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, "", ipamV4Configs, ipamV6Configs, nil))
+		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, ipamV4Configs, ipamV6Configs, nil))
 }
 
 func getEmptyGenericOption() map[string]interface{} {
@@ -321,7 +321,7 @@ func TestNetworkConfig(t *testing.T) {
 		libnetwork.NetworkOptionConfigOnly(),
 		libnetwork.NetworkOptionEnableIPv6(true),
 		libnetwork.NetworkOptionGeneric(option),
-		libnetwork.NetworkOptionIpam("default", "", ipamV4ConfList, ipamV6ConfList, nil),
+		libnetwork.NetworkOptionIpam("default", ipamV4ConfList, ipamV6ConfList, nil),
 	}
 
 	configNetwork, err := controller.NewNetwork(bridgeNetType, "config_network0", "", netOptions...)
@@ -348,9 +348,9 @@ func TestNetworkConfig(t *testing.T) {
 	// Verify a network cannot be created with both config-from and network specific configurations
 	for i, opt := range []libnetwork.NetworkOption{
 		libnetwork.NetworkOptionEnableIPv6(true),
-		libnetwork.NetworkOptionIpam("my-ipam", "", nil, nil, nil),
-		libnetwork.NetworkOptionIpam("", "", ipamV4ConfList, nil, nil),
-		libnetwork.NetworkOptionIpam("", "", nil, ipamV6ConfList, nil),
+		libnetwork.NetworkOptionIpam("my-ipam", nil, nil, nil),
+		libnetwork.NetworkOptionIpam("", ipamV4ConfList, nil, nil),
+		libnetwork.NetworkOptionIpam("", nil, ipamV6ConfList, nil),
 		libnetwork.NetworkOptionLabels(map[string]string{"number": "two"}),
 		libnetwork.NetworkOptionDriverOpts(map[string]string{"com.docker.network.driver.mtu": "1600"}),
 	} {
@@ -1396,7 +1396,7 @@ func TestBridgeIpv6FromMac(t *testing.T) {
 	network, err := controller.NewNetwork(bridgeNetType, "testipv6mac", "",
 		libnetwork.NetworkOptionGeneric(netOption),
 		libnetwork.NetworkOptionEnableIPv6(true),
-		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, "", ipamV4ConfList, ipamV6ConfList, nil),
+		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, ipamV4ConfList, ipamV6ConfList, nil),
 		libnetwork.NetworkOptionDeferIPv6Alloc(true))
 	if err != nil {
 		t.Fatal(err)
@@ -1470,7 +1470,7 @@ func TestEndpointJoin(t *testing.T) {
 	n1, err := controller.NewNetwork(bridgeNetType, "testnetwork1", "",
 		libnetwork.NetworkOptionGeneric(netOption),
 		libnetwork.NetworkOptionEnableIPv6(true),
-		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, "", nil, ipamV6ConfList, nil),
+		libnetwork.NetworkOptionIpam(ipamapi.DefaultIPAM, nil, ipamV6ConfList, nil),
 		libnetwork.NetworkOptionDeferIPv6Alloc(true))
 	if err != nil {
 		t.Fatal(err)
@@ -2296,7 +2296,7 @@ func TestNullIpam(t *testing.T) {
 	defer netnsutils.SetupTestOSContext(t)()
 	controller := newController(t)
 
-	_, err := controller.NewNetwork(bridgeNetType, "testnetworkinternal", "", libnetwork.NetworkOptionIpam(ipamapi.NullIPAM, "", nil, nil, nil))
+	_, err := controller.NewNetwork(bridgeNetType, "testnetworkinternal", "", libnetwork.NetworkOptionIpam(ipamapi.NullIPAM, nil, nil, nil))
 	if err == nil || err.Error() != "ipv4 pool is empty" {
 		t.Fatal("bridge network should complain empty pool")
 	}
