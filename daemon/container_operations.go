@@ -403,25 +403,9 @@ func (daemon *Daemon) allocateNetwork(cfg *config.Config, container *container.C
 		updateSettings = true
 	}
 
-	// always connect default network first since only default
-	// network mode support link and we need do some setting
-	// on sandbox initialize for link, but the sandbox only be initialized
-	// on first network connecting.
-	defaultNetName := runconfig.DefaultDaemonNetworkMode().NetworkName()
-	if nConf, ok := container.NetworkSettings.Networks[defaultNetName]; ok {
-		cleanOperationalData(nConf)
-		if err := daemon.connectToNetwork(cfg, container, defaultNetName, nConf, updateSettings); err != nil {
-			return err
-		}
-	}
-
 	// the intermediate map is necessary because "connectToNetwork" modifies "container.NetworkSettings.Networks"
 	networks := make(map[string]*network.EndpointSettings)
 	for n, epConf := range container.NetworkSettings.Networks {
-		if n == defaultNetName {
-			continue
-		}
-
 		networks[n] = epConf
 	}
 
