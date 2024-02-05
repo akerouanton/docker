@@ -10,6 +10,7 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/integration/internal/container"
 	"github.com/docker/docker/integration/internal/network"
+	"github.com/docker/docker/runconfig"
 	"github.com/docker/docker/testutil"
 	"github.com/docker/docker/testutil/daemon"
 	"gotest.tools/v3/assert"
@@ -189,6 +190,47 @@ func TestBridgeICC(t *testing.T) {
 			assert.Check(t, is.Contains(res.Stdout.String(), "1 packets transmitted, 1 packets received"))
 		})
 	}
+}
+
+func TestDnsBasedDiscoveryOnDefaultNetwork(t *testing.T) {
+	ctx := setupTest(t)
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t, "-D", "--experimental", "--ip6tables")
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	ctx = testutil.StartSpan(ctx, t)
+
+	ctr1Name := sanitizeCtrName(t.Name() + "-ctr1")
+	id1 := container.Run(ctx, t, c,
+		container.WithName(ctr1Name),
+		container.WithImage("busybox:latest"),
+		container.WithCmd("top"),
+		container.WithNetworkMode(runconfig.DefaultDaemonNetworkMode().NetworkName()))
+	defer c.ContainerRemove(ctx, id1, containertypes.RemoveOptions{
+		Force: true,
+	})
+
+	pingCmd := []string{"ping", "-c1", "-W3", ctr1Name}
+
+	ctr2Name := sanitizeCtrName(t.Name() + "-ctr2")
+	attachCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := container.RunAttach(attachCtx, t, c,
+		container.WithName(ctr2Name),
+		container.WithImage("busybox:latest"),
+		container.WithCmd(pingCmd...),
+		container.WithNetworkMode(runconfig.DefaultDaemonNetworkMode().NetworkName()))
+	defer c.ContainerRemove(ctx, res.ContainerID, containertypes.RemoveOptions{
+		Force: true,
+	})
+
+	assert.Check(t, is.Equal(res.ExitCode, 0))
+	assert.Check(t, is.Equal(res.Stderr.Len(), 0))
+	assert.Check(t, is.Contains(res.Stdout.String(), "1 packets transmitted, 1 packets received"))
 }
 
 // TestBridgeINC makes sure two containers on two different bridge networks can't communicate with each other.
