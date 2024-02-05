@@ -286,3 +286,15 @@ func TestForbidDuplicateNetworkNames(t *testing.T) {
 	_, err := c.NetworkCreate(ctx, "testnet", types.NetworkCreate{})
 	assert.Error(t, err, "Error response from daemon: network with name testnet already exists", "2nd NetworkCreate call should have failed")
 }
+
+func TestAliasesOnDefaultBridge(t *testing.T) {
+	ctx := testutil.StartSpan(baseContext, t)
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+}
