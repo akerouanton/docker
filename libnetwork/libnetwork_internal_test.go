@@ -657,8 +657,8 @@ func (b *badDriver) DeleteNetwork(nid string) error {
 	return nil
 }
 
-func (b *badDriver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, options map[string]interface{}) error {
-	return fmt.Errorf("I will not create any endpoint")
+func (b *badDriver) CreateEndpoint(nid, eid string, options driverapi.EndpointOptions) (driverapi.EndpointOptions, error) {
+	return driverapi.EndpointOptions{}, fmt.Errorf("I will not create any endpoint")
 }
 
 func (b *badDriver) DeleteEndpoint(nid, eid string) error {

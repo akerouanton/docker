@@ -64,12 +64,11 @@ type Driver interface {
 
 // EndpointDriver represents a driver capable of managing endpoints.
 type EndpointDriver interface {
-	// CreateEndpoint invokes the driver method to create an endpoint
-	// passing the network id, endpoint id endpoint information and driver
-	// specific config. The endpoint information can be either consumed by
-	// the driver or populated by the driver. The config mechanism will
-	// eventually be replaced with labels which are yet to be introduced.
-	CreateEndpoint(nid, eid string, ifInfo InterfaceInfo, options map[string]interface{}) error
+	// CreateEndpoint invokes the driver method to create an endpoint passing
+	// the network id, endpoint id, and a set of options that should be applied
+	// to the endpoint. The driver is required to return a set of options, with
+	// whatever it deems needed for the Join operation.
+	CreateEndpoint(nid, eid string, opts EndpointOptions) (EndpointOptions, error)
 
 	// DeleteEndpoint invokes the driver method to delete an endpoint
 	// passing the network id and endpoint id.
@@ -96,28 +95,6 @@ type NetworkInfo interface {
 	// based on information from the driver.  In windows, the OS (HNS) chooses
 	// the IP address space if the user does not specify an address space.
 	UpdateIpamConfig(ipV4Data []IPAMData)
-}
-
-// InterfaceInfo provides a go interface for drivers to retrieve
-// network information to interface resources.
-type InterfaceInfo interface {
-	// SetMacAddress allows the driver to set the mac address to the endpoint interface
-	// during the call to CreateEndpoint, if the mac address is not already set.
-	SetMacAddress(mac net.HardwareAddr) error
-
-	// SetIPAddress allows the driver to set the ip address to the endpoint interface
-	// during the call to CreateEndpoint, if the address is not already set.
-	// The API is to be used to assign both the IPv4 and IPv6 address types.
-	SetIPAddress(ip *net.IPNet) error
-
-	// MacAddress returns the MAC address.
-	MacAddress() net.HardwareAddr
-
-	// Address returns the IPv4 address.
-	Address() *net.IPNet
-
-	// AddressIPv6 returns the IPv6 address.
-	AddressIPv6() *net.IPNet
 }
 
 // InterfaceNameInfo provides a go interface for the drivers to assign names

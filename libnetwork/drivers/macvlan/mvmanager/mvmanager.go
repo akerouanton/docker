@@ -41,8 +41,8 @@ func (d *driver) DeleteNetwork(nid string) error {
 	return types.NotImplementedErrorf("not implemented")
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
-	return types.NotImplementedErrorf("not implemented")
+func (d *driver) CreateEndpoint(nid, eid string, opts driverapi.EndpointOptions) (driverapi.EndpointOptions, error) {
+	return driverapi.EndpointOptions{}, types.NotImplementedErrorf("not implemented")
 }
 
 func (d *driver) DeleteEndpoint(nid, eid string) error {

@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/netutils"
 	"github.com/docker/docker/libnetwork/ns"
+	"github.com/docker/docker/libnetwork/types"
 )
 
 type endpointTable map[string]*endpoint
@@ -42,48 +43,45 @@ func (n *network) deleteEndpoint(eid string) {
 	n.Unlock()
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
+func (d *driver) CreateEndpoint(nid, eid string, opts driverapi.EndpointOptions) (driverapi.EndpointOptions, error) {
 	var err error
 	if err = validateID(nid, eid); err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	// Since we perform lazy configuration make sure we try
 	// configuring the driver when we enter CreateEndpoint since
 	// CreateNetwork may not be called in every node.
 	if err := d.configure(); err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	n := d.network(nid)
 	if n == nil {
-		return fmt.Errorf("network id %q not found", nid)
+		return driverapi.EndpointOptions{}, fmt.Errorf("network id %q not found", nid)
 	}
 
 	ep := &endpoint{
 		id:   eid,
 		nid:  n.id,
-		addr: ifInfo.Address(),
-		mac:  ifInfo.MacAddress(),
+		addr: types.GetIPNetCopy(opts.Addr),
 	}
 	if ep.addr == nil {
-		return fmt.Errorf("create endpoint was not passed interface IP address")
+		return driverapi.EndpointOptions{}, fmt.Errorf("create endpoint was not passed interface IP address")
 	}
 
 	if s := n.getSubnetforIP(ep.addr); s == nil {
-		return fmt.Errorf("no matching subnet for IP %q in network %q", ep.addr, nid)
+		return driverapi.EndpointOptions{}, fmt.Errorf("no matching subnet for IP %q in network %q", ep.addr, nid)
 	}
 
 	if ep.mac == nil {
 		ep.mac = netutils.GenerateMACFromIP(ep.addr.IP)
-		if err := ifInfo.SetMacAddress(ep.mac); err != nil {
-			return err
-		}
+		opts.MACAddress = types.GetMacCopy(ep.mac)
 	}
 
 	n.addEndpoint(ep)
 
-	return nil
+	return opts, nil
 }
 
 func (d *driver) DeleteEndpoint(nid, eid string) error {
