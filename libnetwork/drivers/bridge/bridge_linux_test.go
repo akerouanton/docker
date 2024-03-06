@@ -35,7 +35,6 @@ func TestEndpointMarshalling(t *testing.T) {
 		addrv6:     ip2,
 		macAddress: mac,
 		srcName:    "veth123456",
-		config:     &endpointConfiguration{MacAddress: mac},
 		containerConfig: &containerConfiguration{
 			ParentEndpoints: []string{"one", "due", "three"},
 			ChildEndpoints:  []string{"four", "five", "six"},
@@ -90,22 +89,11 @@ func TestEndpointMarshalling(t *testing.T) {
 
 	if e.id != ee.id || e.nid != ee.nid || e.srcName != ee.srcName || !bytes.Equal(e.macAddress, ee.macAddress) ||
 		!types.CompareIPNet(e.addr, ee.addr) || !types.CompareIPNet(e.addrv6, ee.addrv6) ||
-		!compareEpConfig(e.config, ee.config) ||
 		!compareContainerConfig(e.containerConfig, ee.containerConfig) ||
 		!compareConnConfig(e.extConnConfig, ee.extConnConfig) ||
 		!compareBindings(e.portMapping, ee.portMapping) {
 		t.Fatalf("JSON marsh/unmarsh failed.\nOriginal:\n%#v\nDecoded:\n%#v", e, ee)
 	}
-}
-
-func compareEpConfig(a, b *endpointConfiguration) bool {
-	if a == b {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return bytes.Equal(a.MacAddress, b.MacAddress)
 }
 
 func compareContainerConfig(a, b *containerConfiguration) bool {
