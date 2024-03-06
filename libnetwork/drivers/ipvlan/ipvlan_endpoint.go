@@ -14,28 +14,28 @@ import (
 )
 
 // CreateEndpoint assigns the mac, ip and endpoint id for the new container
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
+func (d *driver) CreateEndpoint(nid, eid string, opts driverapi.EndpointOptions) (driverapi.EndpointOptions, error) {
 	if err := validateID(nid, eid); err != nil {
-		return err
+		return opts, err
 	}
 	n, err := d.getNetwork(nid)
 	if err != nil {
-		return fmt.Errorf("network id %q not found", nid)
+		return opts, fmt.Errorf("network id %q not found", nid)
 	}
-	if ifInfo.MacAddress() != nil {
-		return fmt.Errorf("ipvlan interfaces do not support custom mac address assignment")
+	if opts.MACAddress != nil {
+		return opts, fmt.Errorf("ipvlan interfaces do not support custom mac address assignment")
 	}
 	ep := &endpoint{
 		id:     eid,
 		nid:    nid,
-		addr:   ifInfo.Address(),
-		addrv6: ifInfo.AddressIPv6(),
+		addr:   opts.Addr,
+		addrv6: opts.AddrV6,
 	}
 	if ep.addr == nil {
-		return fmt.Errorf("create endpoint was not passed an IP address")
+		return opts, fmt.Errorf("create endpoint was not passed an IP address")
 	}
 	// disallow port mapping -p
-	if opt, ok := epOptions[netlabel.PortMap]; ok {
+	if opt, ok := opts.DriverOpts[netlabel.PortMap]; ok {
 		if _, ok := opt.([]types.PortBinding); ok {
 			if len(opt.([]types.PortBinding)) > 0 {
 				log.G(context.TODO()).Warnf("ipvlan driver does not support port mappings")
@@ -43,7 +43,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 		}
 	}
 	// disallow port exposure --expose
-	if opt, ok := epOptions[netlabel.ExposedPorts]; ok {
+	if opt, ok := opts.DriverOpts[netlabel.ExposedPorts]; ok {
 		if _, ok := opt.([]types.TransportPort); ok {
 			if len(opt.([]types.TransportPort)) > 0 {
 				log.G(context.TODO()).Warnf("ipvlan driver does not support port exposures")
@@ -52,12 +52,12 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	}
 
 	if err := d.storeUpdate(ep); err != nil {
-		return fmt.Errorf("failed to save ipvlan endpoint %.7s to store: %v", ep.id, err)
+		return opts, fmt.Errorf("failed to save ipvlan endpoint %.7s to store: %v", ep.id, err)
 	}
 
 	n.addEndpoint(ep)
 
-	return nil
+	return opts, nil
 }
 
 // DeleteEndpoint remove the endpoint and associated netlink interface

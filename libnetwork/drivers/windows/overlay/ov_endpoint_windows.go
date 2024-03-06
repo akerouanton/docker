@@ -93,15 +93,15 @@ func (n *network) removeEndpointWithAddress(addr *net.IPNet) {
 	}
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
+func (d *driver) CreateEndpoint(nid, eid string, opts driverapi.EndpointOptions) (driverapi.EndpointOptions, error) {
 	var err error
 	if err = validateID(nid, eid); err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	n := d.network(nid)
 	if n == nil {
-		return fmt.Errorf("network id %q not found", nid)
+		return driverapi.EndpointOptions{}, fmt.Errorf("network id %q not found", nid)
 	}
 
 	ep := n.endpoint(eid)
@@ -110,24 +110,24 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 		n.deleteEndpoint(eid)
 		_, err := endpointRequest("DELETE", ep.profileID, "")
 		if err != nil {
-			return err
+			return driverapi.EndpointOptions{}, err
 		}
 	}
 
 	ep = &endpoint{
 		id:   eid,
 		nid:  n.id,
-		addr: ifInfo.Address(),
-		mac:  ifInfo.MacAddress(),
+		addr: types.GetIPNetCopy(opts.Addr),
+		mac:  types.GetMacCopy(opts.MACAddress),
 	}
 
 	if ep.addr == nil {
-		return fmt.Errorf("create endpoint was not passed interface IP address")
+		return driverapi.EndpointOptions{}, fmt.Errorf("create endpoint was not passed interface IP address")
 	}
 
 	s := n.getSubnetforIP(ep.addr)
 	if s == nil {
-		return fmt.Errorf("no matching subnet for IP %q in network %q", ep.addr, nid)
+		return driverapi.EndpointOptions{}, fmt.Errorf("no matching subnet for IP %q in network %q", ep.addr, nid)
 	}
 
 	// Todo: Add port bindings and qos policies here
@@ -149,27 +149,27 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 		PA:   n.providerAddress,
 	})
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	hnsEndpoint.Policies = append(hnsEndpoint.Policies, paPolicy)
 
 	natPolicy, err := json.Marshal(hcsshim.PaPolicy{Type: "OutBoundNAT"})
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	hnsEndpoint.Policies = append(hnsEndpoint.Policies, natPolicy)
 
-	epConnectivity, err := windows.ParseEndpointConnectivity(epOptions)
+	epConnectivity, err := windows.ParseEndpointConnectivity(opts.DriverOpts)
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	ep.portMapping = epConnectivity.PortBindings
 	ep.portMapping, err = windows.AllocatePorts(n.portMapper, ep.portMapping, ep.addr.IP)
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	defer func() {
@@ -180,7 +180,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 
 	pbPolicy, err := windows.ConvertPortBindings(ep.portMapping)
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 	hnsEndpoint.Policies = append(hnsEndpoint.Policies, pbPolicy...)
 
@@ -188,12 +188,12 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 
 	configurationb, err := json.Marshal(hnsEndpoint)
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	hnsresponse, err := endpointRequest("POST", "", string(configurationb))
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	ep.profileID = hnsresponse.Id
@@ -201,23 +201,21 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	if ep.mac == nil {
 		ep.mac, err = net.ParseMAC(hnsresponse.MacAddress)
 		if err != nil {
-			return err
+			return driverapi.EndpointOptions{}, err
 		}
 
-		if err := ifInfo.SetMacAddress(ep.mac); err != nil {
-			return err
-		}
+		opts.MACAddress = ep.mac
 	}
 
 	ep.portMapping, err = windows.ParsePortBindingPolicies(hnsresponse.Policies)
 	if err != nil {
 		endpointRequest("DELETE", hnsresponse.Id, "")
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	n.addEndpoint(ep)
 
-	return nil
+	return opts, nil
 }
 
 func (d *driver) DeleteEndpoint(nid, eid string) error {

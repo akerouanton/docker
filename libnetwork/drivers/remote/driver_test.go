@@ -3,7 +3,6 @@ package remote
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -93,6 +92,14 @@ type testEndpoint struct {
 	destination           string
 	routeType             int
 	disableGatewayService bool
+}
+
+func (test *testEndpoint) EndpointOptions() driverapi.EndpointOptions {
+	return driverapi.EndpointOptions{
+		MACAddress: test.MacAddress(),
+		Addr:       test.Address(),
+		AddrV6:     test.AddressIPv6(),
+	}
 }
 
 func (test *testEndpoint) Address() *net.IPNet {
@@ -437,17 +444,16 @@ func TestRemoteDriver(t *testing.T) {
 	}
 
 	endID := "dummy-endpoint"
-	ifInfo := &testEndpoint{}
-	err = d.CreateEndpoint(netID, endID, ifInfo, map[string]interface{}{})
+	opts, err := d.CreateEndpoint(netID, endID, driverapi.EndpointOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !bytes.Equal(ep.MacAddress(), ifInfo.MacAddress()) || !types.CompareIPNet(ep.Address(), ifInfo.Address()) ||
-		!types.CompareIPNet(ep.AddressIPv6(), ifInfo.AddressIPv6()) {
+	if !bytes.Equal(ep.MacAddress(), opts.MACAddress) || !types.CompareIPNet(ep.Address(), opts.Addr) ||
+		!types.CompareIPNet(ep.AddressIPv6(), opts.AddrV6) {
 		t.Fatalf("Unexpected InterfaceInfo data. Expected (%s, %s, %s). Got (%v, %v, %v)",
 			ep.MacAddress(), ep.Address(), ep.AddressIPv6(),
-			ifInfo.MacAddress(), ifInfo.Address(), ifInfo.AddressIPv6())
+			opts.MACAddress, opts.Addr, opts.AddrV6)
 	}
 
 	joinOpts := map[string]interface{}{"foo": "fooValue"}
@@ -502,7 +508,7 @@ func TestDriverError(t *testing.T) {
 	}
 
 	d := newDriver(plugin, client)
-	if err := d.CreateEndpoint("dummy", "dummy", &testEndpoint{t: t}, map[string]interface{}{}); err == nil {
+	if _, err := d.CreateEndpoint("dummy", "dummy", driverapi.EndpointOptions{}); err == nil {
 		t.Fatal("Expected error from driver")
 	}
 }
@@ -539,35 +545,9 @@ func TestMissingValues(t *testing.T) {
 	}
 
 	d := newDriver(plugin, client)
-	if err := d.CreateEndpoint("dummy", "dummy", ep, map[string]interface{}{}); err != nil {
+	if _, err := d.CreateEndpoint("dummy", "dummy", driverapi.EndpointOptions{}); err != nil {
 		t.Fatal(err)
 	}
-}
-
-type rollbackEndpoint struct{}
-
-func (r *rollbackEndpoint) Interface() *rollbackEndpoint {
-	return r
-}
-
-func (r *rollbackEndpoint) MacAddress() net.HardwareAddr {
-	return nil
-}
-
-func (r *rollbackEndpoint) Address() *net.IPNet {
-	return nil
-}
-
-func (r *rollbackEndpoint) AddressIPv6() *net.IPNet {
-	return nil
-}
-
-func (r *rollbackEndpoint) SetMacAddress(mac net.HardwareAddr) error {
-	return errors.New("invalid mac")
-}
-
-func (r *rollbackEndpoint) SetIPAddress(ip *net.IPNet) error {
-	return errors.New("invalid ip")
 }
 
 func TestRollback(t *testing.T) {
@@ -604,8 +584,11 @@ func TestRollback(t *testing.T) {
 	}
 
 	d := newDriver(plugin, client)
-	ep := &rollbackEndpoint{}
-	if err := d.CreateEndpoint("dummy", "dummy", ep.Interface(), map[string]interface{}{}); err == nil {
+	var epOpts driverapi.EndpointOptions
+	epOpts.MACAddress, _ = net.ParseMAC("01:de:ad:be:ef:09")
+	if _, err := d.CreateEndpoint("dummy", "dummy", epOpts); err == nil {
+		// The remote driver should not accept a plugin which set the MAC
+		// address whereas the input options already have one specified.
 		t.Fatal("Expected error from driver")
 	}
 	if !rolledback {

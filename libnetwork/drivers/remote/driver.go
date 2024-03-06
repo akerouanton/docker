@@ -176,31 +176,27 @@ func (d *driver) DeleteNetwork(nid string) error {
 	return d.call("DeleteNetwork", &api.DeleteNetworkRequest{NetworkID: nid}, &api.DeleteNetworkResponse{})
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) (retErr error) {
-	if ifInfo == nil {
-		return errors.New("must not be called with nil InterfaceInfo")
-	}
-
+func (d *driver) CreateEndpoint(nid, eid string, opts driverapi.EndpointOptions) (_ driverapi.EndpointOptions, retErr error) {
 	reqIface := &api.EndpointInterface{}
-	if ifInfo.Address() != nil {
-		reqIface.Address = ifInfo.Address().String()
+	if opts.Addr != nil {
+		reqIface.Address = opts.Addr.String()
 	}
-	if ifInfo.AddressIPv6() != nil {
-		reqIface.AddressIPv6 = ifInfo.AddressIPv6().String()
+	if opts.AddrV6 != nil {
+		reqIface.AddressIPv6 = opts.AddrV6.String()
 	}
-	if ifInfo.MacAddress() != nil {
-		reqIface.MacAddress = ifInfo.MacAddress().String()
+	if opts.MACAddress != nil {
+		reqIface.MacAddress = opts.MACAddress.String()
 	}
 
 	create := &api.CreateEndpointRequest{
 		NetworkID:  nid,
 		EndpointID: eid,
 		Interface:  reqIface,
-		Options:    epOptions,
+		Options:    opts.DriverOpts,
 	}
 	var res api.CreateEndpointResponse
 	if err := d.call("CreateEndpoint", create, &res); err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 
 	defer func() {
@@ -215,30 +211,35 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 
 	inIface, err := parseInterface(res)
 	if err != nil {
-		return err
+		return driverapi.EndpointOptions{}, err
 	}
 	if inIface == nil {
 		// Remote driver did not set any field
-		return nil
+		return driverapi.EndpointOptions{}, nil
 	}
 
 	if inIface.MacAddress != nil {
-		if err := ifInfo.SetMacAddress(inIface.MacAddress); err != nil {
-			return fmt.Errorf("driver modified interface MAC address: %v", err)
+		if opts.MACAddress != nil {
+			return driverapi.EndpointOptions{}, types.ForbiddenErrorf("endpoint interface MAC address present (%s). Cannot be modified with %s.", opts.MACAddress, inIface.MacAddress)
 		}
+		opts.MACAddress = inIface.MacAddress
 	}
 	if inIface.Address != nil {
-		if err := ifInfo.SetIPAddress(inIface.Address); err != nil {
-			return fmt.Errorf("driver modified interface address: %v", err)
+		if opts.Addr != nil {
+			// TODO(aker): it doesn't make sense to return a 403 Forbidden if the remote driver doesn't something wrong...
+			return driverapi.EndpointOptions{}, types.ForbiddenErrorf("endpoint interface IP present (%s). Cannot be modified with (%s).", opts.Addr, inIface.Address)
 		}
+		opts.Addr = inIface.Address
 	}
 	if inIface.AddressIPv6 != nil {
-		if err := ifInfo.SetIPAddress(inIface.AddressIPv6); err != nil {
-			return fmt.Errorf("driver modified interface address: %v", err)
+		if opts.AddrV6 != nil {
+			// TODO(aker): it doesn't make sense to return a 403 Forbidden if the remote driver doesn't something wrong...
+			return driverapi.EndpointOptions{}, types.ForbiddenErrorf("endpoint interface IP present (%s). Cannot be modified with (%s).", opts.AddrV6, inIface.AddressIPv6)
 		}
+		opts.AddrV6 = inIface.AddressIPv6
 	}
 
-	return nil
+	return opts, nil
 }
 
 func (d *driver) DeleteEndpoint(nid, eid string) error {

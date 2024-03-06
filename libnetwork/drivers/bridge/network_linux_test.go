@@ -33,17 +33,17 @@ func TestLinkCreate(t *testing.T) {
 	}
 
 	te := newTestEndpoint(ipdList[0].Pool, 10)
-	err = d.CreateEndpoint("dummy", "", te.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "", te.EndpointOptions())
 	if err != nil {
 		if _, ok := err.(InvalidEndpointIDError); !ok {
-			t.Fatalf("Failed with a wrong error :%s", err.Error())
+			t.Fatalf("Failed with an unexpected error: %s", err.Error())
 		}
 	} else {
-		t.Fatal("Failed to detect invalid config")
+		t.Fatal("Driver should have failed due to the empty eid")
 	}
 
 	// Good endpoint creation
-	err = d.CreateEndpoint("dummy", "ep", te.Interface(), nil)
+	opts, err := d.CreateEndpoint("dummy", "ep", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
@@ -65,7 +65,7 @@ func TestLinkCreate(t *testing.T) {
 	// then we could check the MTU on hostLnk as well.
 
 	te1 := newTestEndpoint(ipdList[0].Pool, 11)
-	err = d.CreateEndpoint("dummy", "ep", te1.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep", te1.EndpointOptions())
 	if err == nil {
 		t.Fatal("Failed to detect duplicate endpoint id on same network")
 	}
@@ -88,7 +88,7 @@ func TestLinkCreate(t *testing.T) {
 		t.Fatalf("IP %s is not a valid ip in the subnet %s", ip.String(), n.bridge.bridgeIPv4.String())
 	}
 
-	ip6 := te.iface.addrv6.IP
+	ip6 := opts.AddrV6.IP
 	if !n.bridge.bridgeIPv6.Contains(ip6) {
 		t.Fatalf("IP %s is not a valid ip in the subnet %s", ip6.String(), n.bridge.bridgeIPv6.String())
 	}
@@ -126,13 +126,13 @@ func TestLinkCreateTwo(t *testing.T) {
 	}
 
 	te1 := newTestEndpoint(ipdList[0].Pool, 11)
-	err = d.CreateEndpoint("dummy", "ep", te1.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep", te1.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
 
 	te2 := newTestEndpoint(ipdList[0].Pool, 12)
-	err = d.CreateEndpoint("dummy", "ep", te2.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep", te2.EndpointOptions())
 	if err != nil {
 		if _, ok := err.(driverapi.ErrEndpointExists); !ok {
 			t.Fatalf("Failed with a wrong error: %s", err.Error())
@@ -162,7 +162,7 @@ func TestLinkCreateNoEnableIPv6(t *testing.T) {
 		t.Fatalf("Failed to create bridge: %v", err)
 	}
 	te := newTestEndpoint(ipdList[0].Pool, 30)
-	err = d.CreateEndpoint("dummy", "ep", te.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
@@ -199,7 +199,7 @@ func TestLinkDelete(t *testing.T) {
 	}
 
 	te := newTestEndpoint(ipdList[0].Pool, 30)
-	err = d.CreateEndpoint("dummy", "ep1", te.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep1", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
