@@ -40,9 +40,7 @@ func testNetwork(networkType string, t *testing.T) {
 		}
 	}()
 
-	epOptions := make(map[string]interface{})
-	te := &testEndpoint{}
-	err = d.CreateEndpoint("dummy", "ep1", te.Interface(), epOptions)
+	_, err = d.CreateEndpoint("dummy", "ep1", driverapi.EndpointOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
@@ -71,10 +69,6 @@ type testEndpoint struct {
 	macAddress            string
 	gateway               string
 	disableGatewayService bool
-}
-
-func (test *testEndpoint) Interface() driverapi.InterfaceInfo {
-	return test
 }
 
 func (test *testEndpoint) Address() *net.IPNet {

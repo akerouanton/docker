@@ -258,9 +258,8 @@ func TestCreateFullOptions(t *testing.T) {
 	}
 
 	// Verify the IP address allocated for the endpoint belongs to the container network
-	epOptions := make(map[string]interface{})
 	te := newTestEndpoint(cnw, 10)
-	err = d.CreateEndpoint("dummy", "ep1", te.Interface(), epOptions)
+	_, err = d.CreateEndpoint("dummy", "ep1", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
@@ -373,19 +372,18 @@ func TestCreateFullOptionsLabels(t *testing.T) {
 
 	// In short here we are testing --fixed-cidr-v6 daemon option
 	// plus --mac-address run option
-	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	epOptions := map[string]interface{}{netlabel.MacAddress: mac}
 	te := newTestEndpoint(ipdList[0].Pool, 20)
-	err = d.CreateEndpoint("dummy", "ep1", te.Interface(), epOptions)
+	te.opts.MACAddress, _ = net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	opts, err := d.CreateEndpoint("dummy", "ep1", te.EndpointOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !nwV6.Contains(te.Interface().AddressIPv6().IP) {
+	if !nwV6.Contains(opts.AddrV6.IP) {
 		t.Fatalf("endpoint got assigned address outside of container network(%s): %s", nwV6.String(), te.Interface().AddressIPv6())
 	}
-	if te.Interface().AddressIPv6().IP.String() != "2001:db8:2600:2700:2800:aabb:ccdd:eeff" {
-		t.Fatalf("Unexpected endpoint IPv6 address: %v", te.Interface().AddressIPv6().IP)
+	if opts.AddrV6.IP.String() != "2001:db8:2600:2700:2800:aabb:ccdd:eeff" {
+		t.Fatalf("Unexpected endpoint IPv6 address: %v", opts.AddrV6.IP)
 	}
 }
 
@@ -541,12 +539,27 @@ type testEndpoint struct {
 	gw     net.IP
 	gw6    net.IP
 	routes []types.StaticRoute
+	opts   driverapi.EndpointOptions
 }
 
-func newTestEndpoint(nw *net.IPNet, ordinal byte) *testEndpoint {
+func newTestEndpoint(nw *net.IPNet, hostID byte) *testEndpoint {
 	addr := types.GetIPNetCopy(nw)
-	addr.IP[len(addr.IP)-1] = ordinal
-	return &testEndpoint{iface: &testInterface{addr: addr}}
+	addr.IP[len(addr.IP)-1] = hostID
+
+	ep := testEndpoint{iface: &testInterface{}}
+	if addr.IP.To4() != nil {
+		ep.iface.addr = addr
+		ep.opts.Addr = addr
+	} else {
+		ep.iface.addrv6 = addr
+		ep.opts.AddrV6 = addr
+	}
+
+	return &ep
+}
+
+func (te *testEndpoint) EndpointOptions() driverapi.EndpointOptions {
+	return te.opts
 }
 
 func (te *testEndpoint) Interface() *testInterface {
@@ -679,7 +692,7 @@ func testQueryEndpointInfo(t *testing.T, ulPxyEnabled bool) {
 	sbOptions[netlabel.PortMap] = getPortMapping()
 
 	te := newTestEndpoint(ipdList[0].Pool, 11)
-	err = d.CreateEndpoint("net1", "ep1", te.Interface(), nil)
+	_, err = d.CreateEndpoint("net1", "ep1", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
@@ -778,7 +791,7 @@ func TestLinkContainers(t *testing.T) {
 	}
 
 	te1 := newTestEndpoint(ipdList[0].Pool, 11)
-	err = d.CreateEndpoint("net1", "ep1", te1.Interface(), nil)
+	_, err = d.CreateEndpoint("net1", "ep1", te1.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
@@ -803,7 +816,7 @@ func TestLinkContainers(t *testing.T) {
 	}
 
 	te2 := newTestEndpoint(ipdList[0].Pool, 22)
-	err = d.CreateEndpoint("net1", "ep2", te2.Interface(), nil)
+	_, err = d.CreateEndpoint("net1", "ep2", te2.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
@@ -1081,7 +1094,7 @@ func TestSetDefaultGw(t *testing.T) {
 	}
 
 	te := newTestEndpoint(ipdList[0].Pool, 10)
-	err = d.CreateEndpoint("dummy", "ep", te.Interface(), nil)
+	_, err = d.CreateEndpoint("dummy", "ep", te.EndpointOptions())
 	if err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}

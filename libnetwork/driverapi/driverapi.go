@@ -75,28 +75,6 @@ type NetworkInfo interface {
 	UpdateIpamConfig(ipV4Data []IPAMData)
 }
 
-// InterfaceInfo provides a go interface for drivers to retrieve
-// network information to interface resources.
-type InterfaceInfo interface {
-	// SetMacAddress allows the driver to set the mac address to the endpoint interface
-	// during the call to CreateEndpoint, if the mac address is not already set.
-	SetMacAddress(mac net.HardwareAddr) error
-
-	// SetIPAddress allows the driver to set the ip address to the endpoint interface
-	// during the call to CreateEndpoint, if the address is not already set.
-	// The API is to be used to assign both the IPv4 and IPv6 address types.
-	SetIPAddress(ip *net.IPNet) error
-
-	// MacAddress returns the MAC address.
-	MacAddress() net.HardwareAddr
-
-	// Address returns the IPv4 address.
-	Address() *net.IPNet
-
-	// AddressIPv6 returns the IPv6 address.
-	AddressIPv6() *net.IPNet
-}
-
 // InterfaceNameInfo provides a go interface for the drivers to assign names
 // to interfaces.
 type InterfaceNameInfo interface {

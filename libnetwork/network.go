@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/datastore"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/etchosts"
@@ -1095,11 +1096,21 @@ func (n *Network) addEndpoint(ep *Endpoint) error {
 		return fmt.Errorf("failed to add endpoint: %v", err)
 	}
 
-	err = d.CreateEndpoint(n.id, ep.id, ep.Iface(), ep.generic)
+	opts, err := d.CreateEndpoint(n.id, ep.id, driverapi.EndpointOptions{
+		MACAddress: ep.iface.MacAddress(),
+		Addr:       ep.iface.Address(),
+		AddrV6:     ep.iface.AddressIPv6(),
+		LLAddrs:    sliceutil.Map(ep.iface.llAddrs, types.GetIPNetCopy),
+		DriverOpts: ep.generic,
+	})
 	if err != nil {
-		return types.InternalErrorf("failed to create endpoint %s on network %s: %v",
-			ep.Name(), n.Name(), err)
+		return types.InternalErrorf("failed to create endpoint %s on network %s: %v", ep.Name(), n.Name(), err)
 	}
+
+	ep.iface.mac = types.GetMacCopy(opts.MACAddress)
+	ep.iface.addr = types.GetIPNetCopy(opts.Addr)
+	ep.iface.addrv6 = types.GetIPNetCopy(opts.AddrV6)
+	ep.iface.llAddrs = sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy)
 
 	return nil
 }

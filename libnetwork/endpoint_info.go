@@ -206,37 +206,6 @@ func (ep *Endpoint) Iface() *EndpointInterface {
 	return ep.iface
 }
 
-// SetMacAddress allows the driver to set the mac address to the endpoint interface
-// during the call to CreateEndpoint, if the mac address is not already set.
-func (epi *EndpointInterface) SetMacAddress(mac net.HardwareAddr) error {
-	if epi.mac != nil {
-		return types.ForbiddenErrorf("endpoint interface MAC address present (%s). Cannot be modified with %s.", epi.mac, mac)
-	}
-	if mac == nil {
-		return types.InvalidParameterErrorf("tried to set nil MAC address to endpoint interface")
-	}
-	epi.mac = types.GetMacCopy(mac)
-	return nil
-}
-
-func (epi *EndpointInterface) SetIPAddress(address *net.IPNet) error {
-	if address.IP == nil {
-		return types.InvalidParameterErrorf("tried to set nil IP address to endpoint interface")
-	}
-	if address.IP.To4() == nil {
-		return setAddress(&epi.addrv6, address)
-	}
-	return setAddress(&epi.addr, address)
-}
-
-func setAddress(ifaceAddr **net.IPNet, address *net.IPNet) error {
-	if *ifaceAddr != nil {
-		return types.ForbiddenErrorf("endpoint interface IP present (%s). Cannot be modified with (%s).", *ifaceAddr, address)
-	}
-	*ifaceAddr = types.GetIPNetCopy(address)
-	return nil
-}
-
 // MacAddress returns the MAC address assigned to the endpoint.
 func (epi *EndpointInterface) MacAddress() net.HardwareAddr {
 	return types.GetMacCopy(epi.mac)
