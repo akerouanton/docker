@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/log"
 	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/datastore"
+	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/ipamapi"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/options"
@@ -504,13 +505,18 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		return fmt.Errorf("failed to get driver during join: %v", err)
 	}
 
-	err = d.Join(nid, epid, sb.Key(), ep, sb.Labels())
+	epDrv, ok := d.(driverapi.EndpointDriver)
+	if !ok {
+		return nil
+	}
+
+	err = epDrv.Join(nid, epid, sb.Key(), ep, sb.Labels())
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err != nil {
-			if e := d.Leave(nid, epid); e != nil {
+			if e := epDrv.Leave(nid, epid); e != nil {
 				log.G(context.TODO()).Warnf("driver leave failed while rolling back join: %v", e)
 			}
 		}
@@ -720,7 +726,7 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 	extEp := sb.getGatewayEndpoint()
 	moveExtConn := extEp != nil && (extEp.ID() == ep.ID())
 
-	if d != nil {
+	if epDrv, ok := d.(driverapi.EndpointDriver); d != nil && ok {
 		if moveExtConn {
 			log.G(context.TODO()).Debugf("Revoking external connectivity on endpoint %s (%s)", ep.Name(), ep.ID())
 			if err := d.RevokeExternalConnectivity(n.id, ep.id); err != nil {
@@ -729,7 +735,7 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 			}
 		}
 
-		if err := d.Leave(n.id, ep.id); err != nil {
+		if err := epDrv.Leave(n.id, ep.id); err != nil {
 			if _, ok := err.(types.MaskableError); !ok {
 				log.G(context.TODO()).Warnf("driver error disconnecting container %s : %v", ep.name, err)
 			}
@@ -866,7 +872,12 @@ func (ep *Endpoint) deleteEndpoint(force bool) error {
 		return nil
 	}
 
-	if err := driver.DeleteEndpoint(n.id, epid); err != nil {
+	epDrv, ok := driver.(driverapi.EndpointDriver)
+	if !ok {
+		return nil
+	}
+
+	if err := epDrv.DeleteEndpoint(n.id, epid); err != nil {
 		if _, ok := err.(types.ForbiddenError); ok {
 			return err
 		}

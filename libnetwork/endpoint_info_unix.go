@@ -2,7 +2,11 @@
 
 package libnetwork
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/docker/docker/libnetwork/driverapi"
+)
 
 // DriverInfo returns a collection of driver operational data related to this endpoint retrieved from the driver.
 func (ep *Endpoint) DriverInfo() (map[string]interface{}, error) {
@@ -27,5 +31,10 @@ func (ep *Endpoint) DriverInfo() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get driver info: %v", err)
 	}
 
-	return driver.EndpointOperInfo(n.ID(), ep.ID())
+	epDrv, ok := driver.(driverapi.EndpointDriver)
+	if !ok {
+		return nil, nil
+	}
+
+	return epDrv.EndpointOperInfo(n.ID(), ep.ID())
 }

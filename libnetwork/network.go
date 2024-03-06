@@ -1103,7 +1103,12 @@ func (n *Network) addEndpoint(ep *Endpoint) error {
 		return fmt.Errorf("failed to add endpoint: %v", err)
 	}
 
-	err = d.CreateEndpoint(n.id, ep.id, ep.Iface(), ep.generic)
+	epDrv, ok := d.(driverapi.EndpointDriver)
+	if !ok {
+		return nil
+	}
+
+	err = epDrv.CreateEndpoint(n.id, ep.id, ep.Iface(), ep.generic)
 	if err != nil {
 		return types.InternalErrorf("failed to create endpoint %s on network %s: %v",
 			ep.Name(), n.Name(), err)
