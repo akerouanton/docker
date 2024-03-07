@@ -27,6 +27,9 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+// bridge driver must implement EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 const (
 	NetworkType                = "bridge"
 	vethPrefix                 = "veth"

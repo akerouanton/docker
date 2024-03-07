@@ -16,6 +16,9 @@ import (
 	"github.com/docker/docker/libnetwork/scope"
 )
 
+// Overlay driver must implement the EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 const (
 	NetworkType  = "overlay"
 	vethPrefix   = "veth"

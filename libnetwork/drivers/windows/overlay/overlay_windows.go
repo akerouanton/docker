@@ -14,6 +14,9 @@ import (
 	"github.com/docker/docker/libnetwork/scope"
 )
 
+// Windows overlay driver must implement the EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 const (
 	NetworkType = "overlay"
 )
