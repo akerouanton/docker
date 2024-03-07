@@ -12,6 +12,9 @@ import (
 	"github.com/docker/docker/libnetwork/types"
 )
 
+// macvlan driver must implement EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 const (
 	containerVethPrefix = "eth"
 	vethPrefix          = "veth"

@@ -19,6 +19,9 @@ import (
 // remote driver must implement the discover-API.
 var _ discoverapi.Discover = (*driver)(nil)
 
+// remote driver must implement the EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 type driver struct {
 	endpoint    *plugins.Client
 	networkType string
