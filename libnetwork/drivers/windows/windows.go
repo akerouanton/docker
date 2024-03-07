@@ -30,6 +30,9 @@ import (
 	"github.com/docker/docker/libnetwork/types"
 )
 
+// Windows driver must implement the EndpointDriver API.
+var _ driverapi.EndpointDriver = (*driver)(nil)
+
 // networkConfiguration for network specific configuration
 type networkConfiguration struct {
 	ID                    string
