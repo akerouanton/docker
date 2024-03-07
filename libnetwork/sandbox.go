@@ -94,10 +94,14 @@ type resolvConfPathConfig struct {
 type containerConfig struct {
 	hostsPathConfig
 	resolvConfPathConfig
-	generic           map[string]interface{}
+	// legacyLinks holds the list of parent/child this container should link
+	// to. It's only used during the Join operation, by the bridge driver.
+	// TODO(aker): remove it once legacy links are ditched
+	legacyLinks       types.LegacyLinks
 	useDefaultSandBox bool
 	useExternalKey    bool
 	exposedPorts      []types.TransportPort
+	portMappings      []types.PortBinding
 }
 
 // ID returns the ID of the sandbox.
@@ -116,17 +120,6 @@ func (sb *Sandbox) Key() string {
 		return osl.GenerateKey("default")
 	}
 	return osl.GenerateKey(sb.id)
-}
-
-// Labels returns the sandbox's labels.
-func (sb *Sandbox) Labels() map[string]interface{} {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-	opts := make(map[string]interface{}, len(sb.config.generic))
-	for k, v := range sb.config.generic {
-		opts[k] = v
-	}
-	return opts
 }
 
 // Delete destroys this container after detaching it from all connected endpoints.

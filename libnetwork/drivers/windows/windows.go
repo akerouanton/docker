@@ -824,21 +824,16 @@ func (d *driver) EndpointOperInfo(nid, eid string) (map[string]interface{}, erro
 }
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (driverapi.EndpointInterface, error) {
 	network, err := d.getNetwork(nid)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	// Ensure that the endpoint exists
 	endpoint, err := network.getEndpoint(eid)
 	if err != nil {
-		return err
-	}
-
-	err = jinfo.SetGateway(endpoint.gateway)
-	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	endpoint.sandboxID = sboxKey
@@ -847,12 +842,19 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 	if err != nil {
 		// If container doesn't exists in hcs, do not throw error for hot add/remove
 		if err != hcsshim.ErrComputeSystemDoesNotExist {
-			return err
+			return driverapi.EndpointInterface{}, err
 		}
 	}
 
-	jinfo.DisableGatewayService()
-	return nil
+	return driverapi.EndpointInterface{
+		MACAddress:            types.GetMacCopy(opts.MACAddress),
+		Addr:                  types.GetIPNetCopy(opts.Addr),
+		AddrV6:                types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:               sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		Gateway:               endpoint.gateway,
+		DisableGatewayService: true,
+		GossipEntry:           driverapi.GossipEntry{},
+	}, nil
 }
 
 // Leave method is invoked when a Sandbox detaches from an endpoint.

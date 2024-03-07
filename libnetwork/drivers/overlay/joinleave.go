@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/ns"
 	"github.com/docker/docker/libnetwork/osl"
@@ -17,45 +18,45 @@ import (
 )
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (driverapi.EndpointInterface, error) {
 	if err := validateID(nid, eid); err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	n := d.network(nid)
 	if n == nil {
-		return fmt.Errorf("could not find network with id %s", nid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find network with id %s", nid)
 	}
 
 	ep := n.endpoint(eid)
 	if ep == nil {
-		return fmt.Errorf("could not find endpoint with id %s", eid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find endpoint with id %s", eid)
 	}
 
 	if n.secure && len(d.keys) == 0 {
-		return fmt.Errorf("cannot join secure network: encryption keys not present")
+		return driverapi.EndpointInterface{}, fmt.Errorf("cannot join secure network: encryption keys not present")
 	}
 
 	nlh := ns.NlHandle()
 
 	if n.secure && !nlh.SupportsNetlinkFamily(syscall.NETLINK_XFRM) {
-		return fmt.Errorf("cannot join secure network: required modules to install IPSEC rules are missing on host")
+		return driverapi.EndpointInterface{}, fmt.Errorf("cannot join secure network: required modules to install IPSEC rules are missing on host")
 	}
 
 	s := n.getSubnetforIP(ep.addr)
 	if s == nil {
-		return fmt.Errorf("could not find subnet for endpoint %s", eid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find subnet for endpoint %s", eid)
 	}
 
 	if err := n.joinSandbox(s, true); err != nil {
-		return fmt.Errorf("network sandbox join failed: %v", err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("network sandbox join failed: %v", err)
 	}
 
 	sbox := n.sandbox()
 
 	overlayIfName, containerIfName, err := createVethPair()
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	ep.ifName = containerIfName
@@ -67,42 +68,44 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 
 	veth, err := nlh.LinkByName(overlayIfName)
 	if err != nil {
-		return fmt.Errorf("cound not find link by name %s: %v", overlayIfName, err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("cound not find link by name %s: %v", overlayIfName, err)
 	}
 	err = nlh.LinkSetMTU(veth, mtu)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	if err = sbox.AddInterface(overlayIfName, "veth", osl.WithMaster(s.brName)); err != nil {
-		return fmt.Errorf("could not add veth pair inside the network sandbox: %v", err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not add veth pair inside the network sandbox: %v", err)
 	}
 
 	veth, err = nlh.LinkByName(containerIfName)
 	if err != nil {
-		return fmt.Errorf("could not find link by name %s: %v", containerIfName, err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find link by name %s: %v", containerIfName, err)
 	}
 	err = nlh.LinkSetMTU(veth, mtu)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	if err = nlh.LinkSetHardwareAddr(veth, ep.mac); err != nil {
-		return fmt.Errorf("could not set mac address (%v) to the container interface: %v", ep.mac, err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not set mac address (%v) to the container interface: %v", ep.mac, err)
+	}
+
+	epIface := driverapi.EndpointInterface{
+		MACAddress: types.GetMacCopy(opts.MACAddress),
+		Addr:       types.GetIPNetCopy(opts.Addr),
+		AddrV6:     types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:    sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		SrcName:    containerIfName,
+		DstPrefix:  "eth",
 	}
 
 	for _, sub := range n.subnets {
 		if sub == s {
 			continue
 		}
-		jinfo.AddRoute(types.Route{Destination: sub.subnetIP, NextHop: s.gwIP.IP})
-	}
-
-	if iNames := jinfo.InterfaceName(); iNames != nil {
-		err = iNames.SetNames(containerIfName, "eth")
-		if err != nil {
-			return err
-		}
+		epIface.Routes = append(epIface.Routes, types.Route{Destination: sub.subnetIP, NextHop: s.gwIP.IP})
 	}
 
 	d.peerAdd(nid, eid, ep.addr.IP, ep.addr.Mask, ep.mac, d.advertiseAddress, true)
@@ -117,14 +120,16 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		TunnelEndpointIP: d.advertiseAddress.String(),
 	})
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
-	if err := jinfo.AddTableEntry(ovPeerTable, eid, buf); err != nil {
-		log.G(context.TODO()).Errorf("overlay: Failed adding table entry to joininfo: %v", err)
+	epIface.GossipEntry = driverapi.GossipEntry{
+		TableName: ovPeerTable,
+		Key:       eid,
+		Value:     buf,
 	}
 
-	return nil
+	return epIface, nil
 }
 
 func (d *driver) DecodeTableEntry(tablename string, key string, value []byte) (string, map[string]string) {

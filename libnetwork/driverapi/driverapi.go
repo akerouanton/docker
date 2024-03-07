@@ -2,8 +2,6 @@ package driverapi
 
 import (
 	"net"
-
-	"github.com/docker/docker/libnetwork/types"
 )
 
 // NetworkPluginEndpointType represents the Endpoint Type used by Plugin system
@@ -81,8 +79,8 @@ type EndpointDriver interface {
 	// EndpointOperInfo retrieves from the driver the operational data related to the specified endpoint
 	EndpointOperInfo(nid, eid string) (map[string]interface{}, error)
 
-	// Join method is invoked when a Sandbox is attached to an endpoint.
-	Join(nid, eid string, sboxKey string, jinfo JoinInfo, options map[string]interface{}) error
+	// Join method is invoked when an endpoint joins a sandbox.
+	Join(nid, eid, sboxKey string, opts JoinOptions) (EndpointInterface, error)
 
 	// Leave method is invoked when a Sandbox detaches from an endpoint.
 	Leave(nid, eid string) error
@@ -95,42 +93,10 @@ type NetworkInfo interface {
 	// table name.
 	TableEventRegister(tableName string, objType ObjectType) error
 
-	// UpdateIPamConfig updates the networks IPAM configuration
+	// UpdateIpamConfig updates the networks IPAM configuration
 	// based on information from the driver.  In windows, the OS (HNS) chooses
 	// the IP address space if the user does not specify an address space.
 	UpdateIpamConfig(ipV4Data []IPAMData)
-}
-
-// InterfaceNameInfo provides a go interface for the drivers to assign names
-// to interfaces.
-type InterfaceNameInfo interface {
-	// SetNames method assigns the srcName and dstPrefix for the interface.
-	SetNames(srcName, dstPrefix string) error
-}
-
-// JoinInfo represents a set of resources that the driver has the ability to provide during
-// join time.
-type JoinInfo interface {
-	// InterfaceName returns an InterfaceNameInfo go interface to facilitate
-	// setting the names for the interface.
-	InterfaceName() InterfaceNameInfo
-
-	// SetGateway sets the default IPv4 gateway when a container joins the endpoint.
-	SetGateway(net.IP) error
-
-	// SetGatewayIPv6 sets the default IPv6 gateway when a container joins the endpoint.
-	SetGatewayIPv6(net.IP) error
-
-	// AddRoute adds a route to the sandbox.
-	// It may be used in addition to or instead of a default gateway (as above).
-	AddRoute(route types.Route)
-
-	// DisableGatewayService tells libnetwork not to provide Default GW for the container
-	DisableGatewayService()
-
-	// AddTableEntry adds a table entry to the gossip layer
-	// passing the table name, key and an opaque value.
-	AddTableEntry(tableName string, key string, value []byte) error
 }
 
 // Registerer provides a way for network drivers to be dynamically registered.

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/containerd/log"
-	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/types"
 )
 
@@ -56,14 +55,12 @@ func (sb *Sandbox) setupDefaultGW() error {
 		gwName = "gateway_" + sb.id[:gwEPlen]
 	}
 
-	sbLabels := sb.Labels()
-
-	if sbLabels[netlabel.PortMap] != nil {
-		createOptions = append(createOptions, CreateOptionPortMapping(sbLabels[netlabel.PortMap].([]types.PortBinding)))
+	if len(sb.config.portMappings) > 0 {
+		createOptions = append(createOptions, CreateOptionPortMapping(sb.config.portMappings))
 	}
 
-	if sbLabels[netlabel.ExposedPorts] != nil {
-		createOptions = append(createOptions, CreateOptionExposedPorts(sbLabels[netlabel.ExposedPorts].([]types.TransportPort)))
+	if len(sb.config.exposedPorts) > 0 {
+		createOptions = append(createOptions, CreateOptionExposedPorts(sb.config.exposedPorts))
 	}
 
 	epOption := getPlatformOption()
@@ -111,7 +108,6 @@ func (sb *Sandbox) clearDefaultGW() error {
 // Evaluate whether the sandbox requires a default gateway based
 // on the endpoints to which it is connected. It does not account
 // for the default gateway network endpoint.
-
 func (sb *Sandbox) needDefaultGW() bool {
 	var needGW bool
 

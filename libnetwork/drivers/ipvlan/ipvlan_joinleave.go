@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/netutils"
 	"github.com/docker/docker/libnetwork/ns"
@@ -18,46 +19,54 @@ var _, defaultRouteV4, _ = net.ParseCIDR("0.0.0.0/0")
 var _, defaultRouteV6, _ = net.ParseCIDR("::/0")
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (driverapi.EndpointInterface, error) {
 	n, err := d.getNetwork(nid)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 	endpoint := n.endpoint(eid)
 	if endpoint == nil {
-		return fmt.Errorf("could not find endpoint with id %s", eid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find endpoint with id %s", eid)
 	}
 	// generate a name for the iface that will be renamed to eth0 in the sbox
 	containerIfName, err := netutils.GenerateIfaceName(ns.NlHandle(), vethPrefix, vethLen)
 	if err != nil {
-		return fmt.Errorf("error generating an interface name: %v", err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("error generating an interface name: %v", err)
 	}
 	// create the netlink ipvlan interface
 	vethName, err := createIPVlan(containerIfName, n.config.Parent, n.config.IpvlanMode, n.config.IpvlanFlag)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 	// bind the generated iface name to the endpoint
 	endpoint.srcName = vethName
 	ep := n.endpoint(eid)
 	if ep == nil {
-		return fmt.Errorf("could not find endpoint with id %s", eid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find endpoint with id %s", eid)
 	}
+
+	epIface := driverapi.EndpointInterface{
+		MACAddress: types.GetMacCopy(opts.MACAddress),
+		Addr:       types.GetIPNetCopy(opts.Addr),
+		AddrV6:     types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:    sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		SrcName:    vethName,
+		DstPrefix:  containerVethPrefix,
+	}
+
 	if !n.config.Internal {
 		switch n.config.IpvlanMode {
 		case modeL3, modeL3S:
 			// disable gateway services to add a default gw using dev eth0 only
-			jinfo.DisableGatewayService()
-			if jinfo.AddRoute(types.Route{Destination: defaultRouteV4}); err != nil {
-				return fmt.Errorf("failed to set an ipvlan l3/l3s mode ipv4 default gateway: %v", err)
-			}
+			epIface.DisableGatewayService = true
+
+			epIface.Routes = append(epIface.Routes, types.Route{Destination: defaultRouteV4})
 			log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv4_Addr: %s, Ipvlan_Mode: %s, Parent: %s",
 				ep.addr.IP.String(), n.config.IpvlanMode, n.config.Parent)
+
 			// If the endpoint has a v6 address, set a v6 default route
 			if ep.addrv6 != nil {
-				if jinfo.AddRoute(types.Route{Destination: defaultRouteV6}); err != nil {
-					return fmt.Errorf("failed to set an ipvlan l3/l3s mode ipv6 default gateway: %v", err)
-				}
+				epIface.Routes = append(epIface.Routes, types.Route{Destination: defaultRouteV6})
 				log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv6_Addr: %s, Ipvlan_Mode: %s, Parent: %s",
 					ep.addrv6.IP.String(), n.config.IpvlanMode, n.config.Parent)
 			}
@@ -66,33 +75,32 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 			if len(n.config.Ipv4Subnets) > 0 {
 				s := n.getSubnetforIPv4(ep.addr)
 				if s == nil {
-					return fmt.Errorf("could not find a valid ipv4 subnet for endpoint %s", eid)
+					return driverapi.EndpointInterface{}, fmt.Errorf("could not find a valid ipv4 subnet for endpoint %s", eid)
 				}
+
 				v4gw, _, err := net.ParseCIDR(s.GwIP)
 				if err != nil {
-					return fmt.Errorf("gateway %s is not a valid ipv4 address: %v", s.GwIP, err)
+					return driverapi.EndpointInterface{}, fmt.Errorf("gateway %s is not a valid ipv4 address: %v", s.GwIP, err)
 				}
-				err = jinfo.SetGateway(v4gw)
-				if err != nil {
-					return err
-				}
+
+				epIface.Gateway = v4gw
 				log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv4_Addr: %s, Gateway: %s, Ipvlan_Mode: %s, Parent: %s",
 					ep.addr.IP.String(), v4gw.String(), n.config.IpvlanMode, n.config.Parent)
 			}
+
 			// parse and correlate the endpoint v6 address with the available v6 subnets
 			if len(n.config.Ipv6Subnets) > 0 {
 				s := n.getSubnetforIPv6(ep.addrv6)
 				if s == nil {
-					return fmt.Errorf("could not find a valid ipv6 subnet for endpoint %s", eid)
+					return driverapi.EndpointInterface{}, fmt.Errorf("could not find a valid ipv6 subnet for endpoint %s", eid)
 				}
+
 				v6gw, _, err := net.ParseCIDR(s.GwIP)
 				if err != nil {
-					return fmt.Errorf("gateway %s is not a valid ipv6 address: %v", s.GwIP, err)
+					return driverapi.EndpointInterface{}, fmt.Errorf("gateway %s is not a valid ipv6 address: %v", s.GwIP, err)
 				}
-				err = jinfo.SetGatewayIPv6(v6gw)
-				if err != nil {
-					return err
-				}
+
+				epIface.GatewayV6 = v6gw
 				log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv6_Addr: %s, Gateway: %s, Ipvlan_Mode: %s, Parent: %s",
 					ep.addrv6.IP.String(), v6gw.String(), n.config.IpvlanMode, n.config.Parent)
 			}
@@ -107,16 +115,12 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 				ep.addrv6.IP.String(), n.config.IpvlanMode, n.config.Parent)
 		}
 	}
-	iNames := jinfo.InterfaceName()
-	err = iNames.SetNames(vethName, containerVethPrefix)
-	if err != nil {
-		return err
-	}
+
 	if err = d.storeUpdate(ep); err != nil {
-		return fmt.Errorf("failed to save ipvlan endpoint %.7s to store: %v", ep.id, err)
+		return driverapi.EndpointInterface{}, fmt.Errorf("failed to save ipvlan endpoint %.7s to store: %v", ep.id, err)
 	}
 
-	return nil
+	return epIface, nil
 }
 
 // Leave method is invoked when a Sandbox detaches from an endpoint.

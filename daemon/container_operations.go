@@ -24,8 +24,6 @@ import (
 	"github.com/docker/docker/internal/multierror"
 	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork"
-	"github.com/docker/docker/libnetwork/netlabel"
-	"github.com/docker/docker/libnetwork/options"
 	"github.com/docker/docker/libnetwork/scope"
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/docker/docker/opts"
@@ -204,11 +202,9 @@ func (daemon *Daemon) buildSandboxOptions(cfg *config.Config, container *contain
 		}
 	}
 
-	sboxOptions = append(sboxOptions, libnetwork.OptionGeneric(options.Generic{
-		netlabel.GenericData: options.Generic{
-			"ParentEndpoints": parentEndpoints,
-			"ChildEndpoints":  childEndpoints,
-		},
+	sboxOptions = append(sboxOptions, libnetwork.OptionLegacyLinks(types.LegacyLinks{
+		ParentEndpoints: parentEndpoints,
+		ChildEndpoints:  childEndpoints,
 	}))
 	return sboxOptions, nil
 }

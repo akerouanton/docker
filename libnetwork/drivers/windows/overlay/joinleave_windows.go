@@ -12,19 +12,19 @@ import (
 )
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (driverapi.EndpointInterface, error) {
 	if err := validateID(nid, eid); err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	n := d.network(nid)
 	if n == nil {
-		return fmt.Errorf("could not find network with id %s", nid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find network with id %s", nid)
 	}
 
 	ep := n.endpoint(eid)
 	if ep == nil {
-		return fmt.Errorf("could not find endpoint with id %s", eid)
+		return driverapi.EndpointInterface{}, fmt.Errorf("could not find endpoint with id %s", eid)
 	}
 
 	buf, err := proto.Marshal(&PeerRecord{
@@ -33,18 +33,21 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		TunnelEndpointIP: n.providerAddress,
 	})
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
-	if err := jinfo.AddTableEntry(ovPeerTable, eid, buf); err != nil {
-		log.G(context.TODO()).Errorf("overlay: Failed adding table entry to joininfo: %v", err)
-	}
-
-	if ep.disablegateway {
-		jinfo.DisableGatewayService()
-	}
-
-	return nil
+	return driverapi.EndpointInterface{
+		MACAddress:            types.GetMacCopy(opts.MACAddress),
+		Addr:                  types.GetIPNetCopy(opts.Addr),
+		AddrV6:                types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:               sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		DisableGatewayService: ep.disablegateway,
+		GossipEntry: driverapi.GossipEntry{
+			TableName: ovPeerTable,
+			Key:       eid,
+			Value:     buf,
+		},
+	}, nil
 }
 
 func (d *driver) EventNotify(etype driverapi.EventType, nid, tableName, key string, value []byte) {

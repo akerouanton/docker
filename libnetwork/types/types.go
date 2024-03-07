@@ -324,6 +324,15 @@ func (is *InterfaceStatistics) String() string {
 		is.RxBytes, is.RxPackets, is.RxErrors, is.RxDropped, is.TxBytes, is.TxPackets, is.TxErrors, is.TxDropped)
 }
 
+// LegacyLinks is a list of parent/child containers an endpoint should be
+// linked to during the Join operation. It's up to each EndpointDriver to
+// decide whether they support this option.
+// TODO(aker): ditch this struct once we drop support for legacy links.
+type LegacyLinks struct {
+	ParentEndpoints []string
+	ChildEndpoints  []string
+}
+
 /******************************
  * Well-known Error Interfaces
  ******************************/

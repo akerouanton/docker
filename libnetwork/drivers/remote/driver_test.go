@@ -102,6 +102,13 @@ func (test *testEndpoint) EndpointOptions() driverapi.EndpointOptions {
 	}
 }
 
+func (te *testEndpoint) JoinOptions(driverOpts map[string]interface{}) driverapi.JoinOptions {
+	return driverapi.JoinOptions{
+		EndpointOptions: te.EndpointOptions(),
+		DriverOpts:      driverOpts,
+	}
+}
+
 func (test *testEndpoint) Address() *net.IPNet {
 	if test.address == "" {
 		return nil
@@ -124,92 +131,6 @@ func (test *testEndpoint) MacAddress() net.HardwareAddr {
 	}
 	mac, _ := net.ParseMAC(test.macAddress)
 	return mac
-}
-
-func (test *testEndpoint) SetMacAddress(mac net.HardwareAddr) error {
-	if test.macAddress != "" {
-		return types.ForbiddenErrorf("endpoint interface MAC address present (%s). Cannot be modified with %s.", test.macAddress, mac)
-	}
-	if mac == nil {
-		return types.InvalidParameterErrorf("tried to set nil MAC address to endpoint interface")
-	}
-	test.macAddress = mac.String()
-	return nil
-}
-
-func (test *testEndpoint) SetIPAddress(address *net.IPNet) error {
-	if address.IP == nil {
-		return types.InvalidParameterErrorf("tried to set nil IP address to endpoint interface")
-	}
-	if address.IP.To4() == nil {
-		return setAddress(&test.addressIPv6, address)
-	}
-	return setAddress(&test.address, address)
-}
-
-func setAddress(ifaceAddr *string, address *net.IPNet) error {
-	if *ifaceAddr != "" {
-		return types.ForbiddenErrorf("endpoint interface IP present (%s). Cannot be modified with (%s).", *ifaceAddr, address)
-	}
-	*ifaceAddr = address.String()
-	return nil
-}
-
-func (test *testEndpoint) InterfaceName() driverapi.InterfaceNameInfo {
-	return test
-}
-
-func compareIPs(t *testing.T, kind string, shouldBe string, supplied net.IP) {
-	ip := net.ParseIP(shouldBe)
-	if ip == nil {
-		t.Fatalf(`Invalid IP to test against: "%s"`, shouldBe)
-	}
-	if !ip.Equal(supplied) {
-		t.Fatalf(`%s IPs are not equal: expected "%s", got %v`, kind, shouldBe, supplied)
-	}
-}
-
-func compareIPNets(t *testing.T, kind string, shouldBe string, supplied net.IPNet) {
-	_, ipNet, _ := net.ParseCIDR(shouldBe)
-	if ipNet == nil {
-		t.Fatalf(`Invalid IP network to test against: "%s"`, shouldBe)
-	}
-	if !types.CompareIPNet(ipNet, &supplied) {
-		t.Fatalf(`%s IP networks are not equal: expected "%s", got %v`, kind, shouldBe, supplied)
-	}
-}
-
-func (test *testEndpoint) SetGateway(ipv4 net.IP) error {
-	compareIPs(test.t, "Gateway", test.gateway, ipv4)
-	return nil
-}
-
-func (test *testEndpoint) SetGatewayIPv6(ipv6 net.IP) error {
-	compareIPs(test.t, "GatewayIPv6", test.gatewayIPv6, ipv6)
-	return nil
-}
-
-func (test *testEndpoint) SetNames(src string, dst string) error {
-	if test.src != src {
-		test.t.Fatalf(`Wrong SrcName; expected "%s", got "%s"`, test.src, src)
-	}
-	if test.dst != dst {
-		test.t.Fatalf(`Wrong DstPrefix; expected "%s", got "%s"`, test.dst, dst)
-	}
-	return nil
-}
-
-func (test *testEndpoint) AddRoute(route types.Route) {
-	compareIPNets(test.t, "Destination", test.destination, *route.Destination)
-	compareIPs(test.t, "NextHop", test.nextHop, route.NextHop)
-}
-
-func (test *testEndpoint) DisableGatewayService() {
-	test.disableGatewayService = true
-}
-
-func (test *testEndpoint) AddTableEntry(tableName string, key string, value []byte) error {
-	return nil
 }
 
 func TestGetEmptyCapabilities(t *testing.T) {
@@ -451,7 +372,7 @@ func TestRemoteDriver(t *testing.T) {
 	}
 
 	joinOpts := map[string]interface{}{"foo": "fooValue"}
-	err = d.Join(netID, endID, "sandbox-key", ep, joinOpts)
+	_, err = d.Join(netID, endID, "sandbox-key", ep.JoinOptions(joinOpts))
 	if err != nil {
 		t.Fatal(err)
 	}

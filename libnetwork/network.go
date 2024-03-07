@@ -1166,7 +1166,9 @@ func (n *Network) createEndpoint(name string, options ...EndpointOption) (*Endpo
 	}
 	n = ep.network
 
+	ep.mu.Lock()
 	ep.processOptions(options...)
+	ep.mu.Unlock()
 
 	for _, llIPNet := range ep.Iface().LinkLocalAddresses() {
 		if !llIPNet.IP.IsLinkLocalUnicast() {

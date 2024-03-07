@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/discoverapi"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/drivers/remote/api"
@@ -263,19 +264,19 @@ func (d *driver) EndpointOperInfo(nid, eid string) (map[string]interface{}, erro
 }
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) (retErr error) {
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (_ driverapi.EndpointInterface, retErr error) {
 	join := &api.JoinRequest{
 		NetworkID:  nid,
 		EndpointID: eid,
 		SandboxKey: sboxKey,
-		Options:    options,
+		Options:    opts.DriverOpts,
 	}
 	var (
 		res api.JoinResponse
 		err error
 	)
 	if err = d.call("Join", join, &res); err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	defer func() {
@@ -288,43 +289,40 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		}
 	}()
 
-	ifaceName := res.InterfaceName
-	if iface := jinfo.InterfaceName(); iface != nil && ifaceName != nil {
-		if err := iface.SetNames(ifaceName.SrcName, ifaceName.DstPrefix); err != nil {
-			return fmt.Errorf("failed to set interface name: %s", err)
-		}
+	epIface := driverapi.EndpointInterface{
+		MACAddress:            types.GetMacCopy(opts.MACAddress),
+		Addr:                  types.GetIPNetCopy(opts.Addr),
+		AddrV6:                types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:               sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		SrcName:               res.InterfaceName.SrcName,
+		DstPrefix:             res.InterfaceName.DstPrefix,
+		DisableGatewayService: res.DisableGatewayService,
+		GossipEntry:           driverapi.GossipEntry{},
 	}
 
-	var addr net.IP
 	if res.Gateway != "" {
-		if addr = net.ParseIP(res.Gateway); addr == nil {
-			return fmt.Errorf(`unable to parse Gateway "%s"`, res.Gateway)
+		gw := net.ParseIP(res.Gateway)
+		if gw == nil {
+			return driverapi.EndpointInterface{}, fmt.Errorf(`unable to parse Gateway "%s"`, res.Gateway)
 		}
-		if jinfo.SetGateway(addr) != nil {
-			return fmt.Errorf("failed to set gateway: %v", addr)
-		}
+		epIface.Gateway = gw
 	}
 	if res.GatewayIPv6 != "" {
-		if addr = net.ParseIP(res.GatewayIPv6); addr == nil {
-			return fmt.Errorf(`unable to parse GatewayIPv6 "%s"`, res.GatewayIPv6)
+		gwV6 := net.ParseIP(res.GatewayIPv6)
+		if gwV6 == nil {
+			return driverapi.EndpointInterface{}, fmt.Errorf(`unable to parse GatewayIPv6 "%s"`, res.GatewayIPv6)
 		}
-		if jinfo.SetGatewayIPv6(addr) != nil {
-			return fmt.Errorf("failed to set gateway IPv6: %v", addr)
-		}
+		epIface.GatewayV6 = gwV6
 	}
 	if len(res.StaticRoutes) > 0 {
 		routes, err := parseStaticRoutes(res)
 		if err != nil {
-			return err
+			return driverapi.EndpointInterface{}, err
 		}
-		for _, route := range routes {
-			jinfo.AddRoute(route)
-		}
+		epIface.Routes = routes
 	}
-	if res.DisableGatewayService {
-		jinfo.DisableGatewayService()
-	}
-	return nil
+
+	return epIface, nil
 }
 
 // Leave method is invoked when a Sandbox detaches from an endpoint.

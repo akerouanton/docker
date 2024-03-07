@@ -1,5 +1,8 @@
 package driverapi
 
-// Deprecated: swarmkit is the only place where this interface is referenced -- we can't kill it with fire right away.
+// Deprecated: swarmkit references this interface -- we can't kill it with fire right away.
 type InterfaceInfo interface {
 }
+
+// Deprecated: swarmkit references this interface -- we can't kill it with fire right away.
+type JoinInfo interface{}

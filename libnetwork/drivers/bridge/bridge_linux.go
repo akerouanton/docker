@@ -12,6 +12,7 @@ import (
 
 	"github.com/containerd/log"
 	"github.com/docker/docker/errdefs"
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/datastore"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/iptables"
@@ -1209,46 +1210,48 @@ func (d *driver) EndpointOperInfo(nid, eid string) (map[string]interface{}, erro
 	return m, nil
 }
 
-// Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+// Join method is invoked when an endpoint joins a sandbox.
+func (d *driver) Join(nid, eid string, sboxKey string, opts driverapi.JoinOptions) (driverapi.EndpointInterface, error) {
 	network, err := d.getNetwork(nid)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	endpoint, err := network.getEndpoint(eid)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
 	if endpoint == nil {
-		return EndpointNotFoundError(eid)
+		return driverapi.EndpointInterface{}, EndpointNotFoundError(eid)
 	}
 
-	endpoint.containerConfig, err = parseContainerOptions(options)
+	endpoint.containerConfig, err = parseContainerOptions(opts.DriverOpts)
 	if err != nil {
-		return err
+		return driverapi.EndpointInterface{}, err
 	}
 
-	iNames := jinfo.InterfaceName()
 	containerVethPrefix := defaultContainerVethPrefix
 	if network.config.ContainerIfacePrefix != "" {
 		containerVethPrefix = network.config.ContainerIfacePrefix
 	}
-	if err := iNames.SetNames(endpoint.srcName, containerVethPrefix); err != nil {
-		return err
-	}
 
+	var gateway, gatewayV6 net.IP
 	if !network.config.Internal {
-		if err := jinfo.SetGateway(network.bridge.gatewayIPv4); err != nil {
-			return err
-		}
-		if err := jinfo.SetGatewayIPv6(network.bridge.gatewayIPv6); err != nil {
-			return err
-		}
+		gateway = network.bridge.gatewayIPv4
+		gatewayV6 = network.bridge.gatewayIPv6
 	}
 
-	return nil
+	return driverapi.EndpointInterface{
+		MACAddress: types.GetMacCopy(opts.MACAddress),
+		Addr:       types.GetIPNetCopy(opts.Addr),
+		AddrV6:     types.GetIPNetCopy(opts.AddrV6),
+		LLAddrs:    sliceutil.Map(opts.LLAddrs, types.GetIPNetCopy),
+		SrcName:    endpoint.srcName,
+		DstPrefix:  containerVethPrefix,
+		Gateway:    gateway,
+		GatewayV6:  gatewayV6,
+	}, nil
 }
 
 // Leave method is invoked when a Sandbox detaches from an endpoint.

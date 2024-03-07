@@ -4,6 +4,7 @@ package netnsutils
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 	"testing"

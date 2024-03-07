@@ -429,9 +429,6 @@ func (ep *Endpoint) Skip() bool {
 }
 
 func (ep *Endpoint) processOptions(options ...EndpointOption) {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-
 	for _, opt := range options {
 		if opt != nil {
 			opt(ep)
@@ -489,15 +486,14 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 	}
 
 	ep.mu.Lock()
+
 	if ep.sandboxID != "" {
 		ep.mu.Unlock()
 		return types.ForbiddenErrorf("another container is attached to the same network endpoint")
 	}
 	ep.network = n
 	ep.sandboxID = sb.ID()
-	ep.joinInfo = &endpointJoinInfo{}
 	epid := ep.id
-	ep.mu.Unlock()
 	defer func() {
 		if err != nil {
 			ep.mu.Lock()
@@ -510,7 +506,15 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 
 	ep.processOptions(options...)
 
-	err = epDrv.Join(nid, epid, sb.Key(), ep, sb.Labels())
+	epIface, err := epDrv.Join(nid, epid, sb.Key(), driverapi.JoinOptions{
+		EndpointOptions: driverapi.EndpointOptions{
+			MACAddress: ep.iface.MacAddress(),
+			Addr:       ep.iface.Address(),
+			AddrV6:     ep.iface.AddressIPv6(),
+			LLAddrs:    sliceutil.Map(ep.iface.llAddrs, types.GetIPNetCopy),
+			DriverOpts: ep.generic,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -521,6 +525,32 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 			}
 		}
 	}()
+
+	ep.iface = &EndpointInterface{
+		mac:       epIface.MACAddress,
+		addr:      epIface.Addr,
+		addrv6:    epIface.AddrV6,
+		llAddrs:   epIface.LLAddrs,
+		srcName:   epIface.SrcName,
+		dstPrefix: epIface.DstPrefix,
+		v4PoolID:  ep.iface.v4PoolID,
+		v6PoolID:  ep.iface.v6PoolID,
+	}
+	ep.joinInfo = &endpointJoinInfo{
+		gw:                    epIface.Gateway,
+		gw6:                   epIface.GatewayV6,
+		Routes:                epIface.Routes,
+		disableGatewayService: epIface.DisableGatewayService,
+	}
+	if epIface.GossipEntry.TableName != "" && epIface.GossipEntry.Key != "" {
+		ep.joinInfo.driverTableEntries = []*tableEntry{{
+			tableName: epIface.GossipEntry.TableName,
+			key:       epIface.GossipEntry.Key,
+			value:     epIface.GossipEntry.Value,
+		}}
+	}
+
+	ep.mu.Unlock()
 
 	if !n.getController().isAgent() {
 		if !n.getController().isSwarmNode() || n.Scope() != scope.Swarm || !n.driverIsMultihost() {
@@ -576,6 +606,10 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 	}
 
 	moveExtConn := sb.getGatewayEndpoint() != extEp
+	opaqueOpts := map[string]interface{}{
+		netlabel.PortMap:      sb.config.portMappings,
+		netlabel.ExposedPorts: sb.config.exposedPorts,
+	}
 
 	if moveExtConn {
 		if extEp != nil {
@@ -595,7 +629,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 			}
 			defer func() {
 				if err != nil {
-					if e := extD.ProgramExternalConnectivity(extEp.network.ID(), extEp.ID(), sb.Labels()); e != nil {
+					if e := extD.ProgramExternalConnectivity(extEp.network.ID(), extEp.ID(), opaqueOpts); e != nil {
 						log.G(context.TODO()).Warnf("Failed to roll-back external connectivity on endpoint %s (%s): %v",
 							extEp.Name(), extEp.ID(), e)
 					}
@@ -604,7 +638,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		}
 		if !n.internal {
 			log.G(context.TODO()).Debugf("Programming external connectivity on endpoint %s (%s)", ep.Name(), ep.ID())
-			if err = d.ProgramExternalConnectivity(n.ID(), ep.ID(), sb.Labels()); err != nil {
+			if err = d.ProgramExternalConnectivity(n.ID(), ep.ID(), opaqueOpts); err != nil {
 				return types.InternalErrorf(
 					"driver failed programming external connectivity on endpoint %s (%s): %v",
 					ep.Name(), ep.ID(), err)
@@ -772,6 +806,11 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 		return sb.setupDefaultGW()
 	}
 
+	opaqueOpts := map[string]interface{}{
+		netlabel.PortMap:      sb.config.portMappings,
+		netlabel.ExposedPorts: sb.config.exposedPorts,
+	}
+
 	// New endpoint providing external connectivity for the sandbox
 	extEp = sb.getGatewayEndpoint()
 	if moveExtConn && extEp != nil {
@@ -784,7 +823,7 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to get driver for programming external connectivity during leave: %v", err)
 		}
-		if err := extD.ProgramExternalConnectivity(extEp.network.ID(), extEp.ID(), sb.Labels()); err != nil {
+		if err := extD.ProgramExternalConnectivity(extEp.network.ID(), extEp.ID(), opaqueOpts); err != nil {
 			log.G(context.TODO()).Warnf("driver failed programming external connectivity on endpoint %s: (%s) %v",
 				extEp.Name(), extEp.ID(), err)
 		}

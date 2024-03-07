@@ -48,13 +48,13 @@ func TestLinkCreate(t *testing.T) {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
 
-	err = d.Join("dummy", "ep", "sbox", te, nil)
+	epIface, err := d.Join("dummy", "ep", "sbox", te.JoinOptions(nil))
 	if err != nil {
 		t.Fatalf("Failed to create a link: %s", err.Error())
 	}
 
 	// Verify sbox endpoint interface inherited MTU value from bridge config
-	sboxLnk, err := netlink.LinkByName(te.iface.srcName)
+	sboxLnk, err := netlink.LinkByName(epIface.SrcName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,22 +70,21 @@ func TestLinkCreate(t *testing.T) {
 		t.Fatal("Failed to detect duplicate endpoint id on same network")
 	}
 
-	if te.iface.dstName == "" {
+	if epIface.DstPrefix == "" {
 		t.Fatal("Invalid Dstname returned")
 	}
 
-	_, err = netlink.LinkByName(te.iface.srcName)
+	_, err = netlink.LinkByName(epIface.SrcName)
 	if err != nil {
-		t.Fatalf("Could not find source link %s: %v", te.iface.srcName, err)
+		t.Fatalf("Could not find source link %s: %v", epIface.SrcName, err)
 	}
 
 	n, ok := d.networks["dummy"]
 	if !ok {
 		t.Fatalf("Cannot find network %s inside driver", "dummy")
 	}
-	ip := te.iface.addr.IP
-	if !n.bridge.bridgeIPv4.Contains(ip) {
-		t.Fatalf("IP %s is not a valid ip in the subnet %s", ip.String(), n.bridge.bridgeIPv4.String())
+	if !n.bridge.bridgeIPv4.Contains(epIface.Addr.IP) {
+		t.Fatalf("IP %s is not a valid ip in the subnet %s", epIface.Addr.IP.String(), n.bridge.bridgeIPv4.String())
 	}
 
 	ip6 := opts.AddrV6.IP
@@ -93,14 +92,14 @@ func TestLinkCreate(t *testing.T) {
 		t.Fatalf("IP %s is not a valid ip in the subnet %s", ip6.String(), bridgeIPv6.String())
 	}
 
-	if !te.gw.Equal(n.bridge.bridgeIPv4.IP) {
+	if !epIface.Gateway.Equal(n.bridge.bridgeIPv4.IP) {
 		t.Fatalf("Invalid default gateway. Expected %s. Got %s", n.bridge.bridgeIPv4.IP.String(),
-			te.gw.String())
+			epIface.Gateway.String())
 	}
 
-	if !te.gw6.Equal(n.bridge.bridgeIPv6.IP) {
+	if !epIface.GatewayV6.Equal(n.bridge.bridgeIPv6.IP) {
 		t.Fatalf("Invalid default gateway for IPv6. Expected %s. Got %s", n.bridge.bridgeIPv6.IP.String(),
-			te.gw6.String())
+			epIface.GatewayV6.String())
 	}
 }
 

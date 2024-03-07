@@ -562,6 +562,19 @@ func (te *testEndpoint) EndpointOptions() driverapi.EndpointOptions {
 	return te.opts
 }
 
+func (te *testEndpoint) JoinOptions(driverOpts map[string]interface{}) driverapi.JoinOptions {
+	var portMappings []types.PortBinding
+	if _, ok := driverOpts[netlabel.PortMap].([]types.PortBinding); ok {
+		portMappings = driverOpts[netlabel.PortMap].([]types.PortBinding)
+	}
+
+	return driverapi.JoinOptions{
+		EndpointOptions: te.EndpointOptions(),
+		PortMappings:    portMappings,
+		DriverOpts:      driverOpts,
+	}
+}
+
 func (te *testEndpoint) Interface() *testInterface {
 	return te.iface
 }
@@ -606,40 +619,6 @@ func setAddress(ifaceAddr **net.IPNet, address *net.IPNet) error {
 	*ifaceAddr = types.GetIPNetCopy(address)
 	return nil
 }
-
-func (i *testInterface) SetNames(srcName string, dstName string) error {
-	i.srcName = srcName
-	i.dstName = dstName
-	return nil
-}
-
-func (te *testEndpoint) InterfaceName() driverapi.InterfaceNameInfo {
-	if te.iface != nil {
-		return te.iface
-	}
-
-	return nil
-}
-
-func (te *testEndpoint) SetGateway(gw net.IP) error {
-	te.gw = gw
-	return nil
-}
-
-func (te *testEndpoint) SetGatewayIPv6(gw6 net.IP) error {
-	te.gw6 = gw6
-	return nil
-}
-
-func (te *testEndpoint) AddRoute(route types.Route) {
-	te.routes = append(te.routes, route)
-}
-
-func (te *testEndpoint) AddTableEntry(tableName string, key string, value []byte) error {
-	return nil
-}
-
-func (te *testEndpoint) DisableGatewayService() {}
 
 func TestQueryEndpointInfo(t *testing.T) {
 	testQueryEndpointInfo(t, true)
@@ -696,7 +675,7 @@ func testQueryEndpointInfo(t *testing.T, ulPxyEnabled bool) {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
 
-	err = d.Join("net1", "ep1", "sbox", te, sbOptions)
+	_, err = d.Join("net1", "ep1", "sbox", te.JoinOptions(sbOptions))
 	if err != nil {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
@@ -799,7 +778,7 @@ func TestLinkContainers(t *testing.T) {
 	sbOptions := make(map[string]interface{})
 	sbOptions[netlabel.ExposedPorts] = exposedPorts
 
-	err = d.Join("net1", "ep1", "sbox", te1, sbOptions)
+	_, err = d.Join("net1", "ep1", "sbox", te1.JoinOptions(sbOptions))
 	if err != nil {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
@@ -830,7 +809,7 @@ func TestLinkContainers(t *testing.T) {
 		"ChildEndpoints": []string{"ep1"},
 	}
 
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
+	_, err = d.Join("net1", "ep2", "", te2.JoinOptions(sbOptions))
 	if err != nil {
 		t.Fatal("Failed to link ep1 and ep2")
 	}
@@ -888,7 +867,7 @@ func TestLinkContainers(t *testing.T) {
 		"ChildEndpoints": []string{"ep1", "ep4"},
 	}
 
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
+	_, err = d.Join("net1", "ep2", "", te2.JoinOptions(sbOptions))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,16 +1077,16 @@ func TestSetDefaultGw(t *testing.T) {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 
-	err = d.Join("dummy", "ep", "sbox", te, nil)
+	epIface, err := d.Join("dummy", "ep", "sbox", te.JoinOptions(nil))
 	if err != nil {
 		t.Fatalf("Failed to join endpoint: %v", err)
 	}
 
-	if !gw4.Equal(te.gw) {
+	if !gw4.Equal(epIface.Gateway) {
 		t.Fatalf("Failed to configure default gateway. Expected %v. Found %v", gw4, te.gw)
 	}
 
-	if !gw6.Equal(te.gw6) {
+	if !gw6.Equal(epIface.GatewayV6) {
 		t.Fatalf("Failed to configure default gateway. Expected %v. Found %v", gw6, te.gw6)
 	}
 }

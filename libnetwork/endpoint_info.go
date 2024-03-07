@@ -6,7 +6,6 @@ import (
 	"net"
 
 	"github.com/docker/docker/internal/sliceutil"
-	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/types"
 )
 
@@ -239,12 +238,6 @@ func (epi *EndpointInterface) SetNames(srcName string, dstPrefix string) error {
 	return nil
 }
 
-func (ep *Endpoint) InterfaceName() driverapi.InterfaceNameInfo {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-	return ep.iface
-}
-
 // AddRoute adds a route to the sandbox.
 // It may be used in addition to or instead of a default gateway (as above).
 func (ep *Endpoint) AddRoute(route types.Route) {
@@ -322,24 +315,6 @@ func (ep *Endpoint) GatewayIPv6() net.IP {
 	}
 
 	return types.GetIPCopy(ep.joinInfo.gw6)
-}
-
-// SetGateway sets the default IPv4 gateway when a container joins the endpoint.
-func (ep *Endpoint) SetGateway(gw net.IP) error {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-
-	ep.joinInfo.gw = types.GetIPCopy(gw)
-	return nil
-}
-
-// SetGatewayIPv6 sets the default IPv6 gateway when a container joins the endpoint.
-func (ep *Endpoint) SetGatewayIPv6(gw6 net.IP) error {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-
-	ep.joinInfo.gw6 = types.GetIPCopy(gw6)
-	return nil
 }
 
 func (ep *Endpoint) retrieveFromStore() (*Endpoint, error) {

@@ -1,7 +1,6 @@
 package libnetwork
 
 import (
-	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/osl"
 	"github.com/docker/docker/libnetwork/types"
 )
@@ -110,17 +109,12 @@ func OptionUseExternalKey() SandboxOption {
 	}
 }
 
-// OptionGeneric function returns an option setter for Generic configuration
-// that is not managed by libNetwork but can be used by the Drivers during the call to
-// net container creation method. Container Labels are a good example.
-func OptionGeneric(generic map[string]interface{}) SandboxOption {
+// OptionLegacyLinks function returns a SandboxOption that will set the list of
+// links on the Sandbox config.
+// TODO(aker): ditch this option once we drop support for legacy links.
+func OptionLegacyLinks(links types.LegacyLinks) SandboxOption {
 	return func(sb *Sandbox) {
-		if sb.config.generic == nil {
-			sb.config.generic = make(map[string]interface{}, len(generic))
-		}
-		for k, v := range generic {
-			sb.config.generic[k] = v
-		}
+		sb.config.legacyLinks = links
 	}
 }
 
@@ -128,15 +122,11 @@ func OptionGeneric(generic map[string]interface{}) SandboxOption {
 // ports option to be passed to container Create method.
 func OptionExposedPorts(exposedPorts []types.TransportPort) SandboxOption {
 	return func(sb *Sandbox) {
-		if sb.config.generic == nil {
-			sb.config.generic = make(map[string]interface{})
-		}
 		// Defensive copy
 		eps := make([]types.TransportPort, len(exposedPorts))
 		copy(eps, exposedPorts)
 		// Store endpoint label and in generic because driver needs it
 		sb.config.exposedPorts = eps
-		sb.config.generic[netlabel.ExposedPorts] = eps
 	}
 }
 
@@ -144,13 +134,10 @@ func OptionExposedPorts(exposedPorts []types.TransportPort) SandboxOption {
 // ports option to be passed to container Create method.
 func OptionPortMapping(portBindings []types.PortBinding) SandboxOption {
 	return func(sb *Sandbox) {
-		if sb.config.generic == nil {
-			sb.config.generic = make(map[string]interface{})
-		}
 		// Store a copy of the bindings as generic data to pass to the driver
 		pbs := make([]types.PortBinding, len(portBindings))
 		copy(pbs, portBindings)
-		sb.config.generic[netlabel.PortMap] = pbs
+		sb.config.portMappings = pbs
 	}
 }
 
