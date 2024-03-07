@@ -300,33 +300,11 @@ func ParseCIDR(cidr string) (n *net.IPNet, e error) {
 	return
 }
 
-const (
-	// NEXTHOP indicates a StaticRoute with an IP next hop.
-	NEXTHOP = iota
-
-	// CONNECTED indicates a StaticRoute with an interface for directly connected peers.
-	CONNECTED
-)
-
-// StaticRoute is a statically-provisioned IP route.
-type StaticRoute struct {
+type Route struct {
 	Destination *net.IPNet
-
-	RouteType int // NEXT_HOP or CONNECTED
 
 	// NextHop will be resolved by the kernel (i.e. as a loose hop).
 	NextHop net.IP
-}
-
-// GetCopy returns a copy of this StaticRoute structure
-func (r *StaticRoute) GetCopy() *StaticRoute {
-	d := GetIPNetCopy(r.Destination)
-	nh := GetIPCopy(r.NextHop)
-	return &StaticRoute{
-		Destination: d,
-		RouteType:   r.RouteType,
-		NextHop:     nh,
-	}
 }
 
 // InterfaceStatistics represents the interface's statistics

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/vishvananda/netlink"
 )
@@ -27,17 +28,16 @@ func (n *Namespace) GatewayIPv6() net.IP {
 // StaticRoutes returns additional static routes for the sandbox. Note that
 // directly connected routes are stored on the particular interface they
 // refer to.
-func (n *Namespace) StaticRoutes() []*types.StaticRoute {
+func (n *Namespace) StaticRoutes() []types.Route {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	routes := make([]*types.StaticRoute, len(n.staticRoutes))
-	for i, route := range n.staticRoutes {
-		r := route.GetCopy()
-		routes[i] = r
-	}
-
-	return routes
+	return sliceutil.Map(n.routes, func(r types.Route) types.Route {
+		return types.Route{
+			Destination: r.Destination,
+			NextHop:     r.NextHop,
+		}
+	})
 }
 
 // SetGateway sets the default IPv4 gateway for the sandbox. It is a no-op
@@ -172,31 +172,31 @@ func (n *Namespace) UnsetGatewayIPv6() error {
 }
 
 // AddStaticRoute adds a static route to the sandbox.
-func (n *Namespace) AddStaticRoute(r *types.StaticRoute) error {
+func (n *Namespace) AddStaticRoute(r types.Route) error {
 	if err := n.programRoute(r.Destination, r.NextHop); err != nil {
 		return err
 	}
 
 	n.mu.Lock()
-	n.staticRoutes = append(n.staticRoutes, r)
+	n.routes = append(n.routes, r)
 	n.mu.Unlock()
 	return nil
 }
 
 // RemoveStaticRoute removes a static route from the sandbox.
-func (n *Namespace) RemoveStaticRoute(r *types.StaticRoute) error {
+func (n *Namespace) RemoveStaticRoute(r types.Route) error {
 	if err := n.removeRoute(r.Destination, r.NextHop); err != nil {
 		return err
 	}
 
 	n.mu.Lock()
-	lastIndex := len(n.staticRoutes) - 1
-	for i, v := range n.staticRoutes {
-		if v == r {
+	lastIndex := len(n.routes) - 1
+	for i, v := range n.routes {
+		if v.Destination == r.Destination && v.NextHop.Equal(r.NextHop) {
 			// Overwrite the route we're removing with the last element
-			n.staticRoutes[i] = n.staticRoutes[lastIndex]
+			n.routes[i] = n.routes[lastIndex]
 			// Shorten the slice to trim the extra element
-			n.staticRoutes = n.staticRoutes[:lastIndex]
+			n.routes = n.routes[:lastIndex]
 			break
 		}
 	}

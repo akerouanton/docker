@@ -14,16 +14,8 @@ import (
 	"github.com/docker/docker/libnetwork/types"
 )
 
-type staticRoute struct {
-	Destination *net.IPNet
-	RouteType   int
-	NextHop     net.IP
-}
-
-const (
-	defaultV4RouteCidr = "0.0.0.0/0"
-	defaultV6RouteCidr = "::/0"
-)
+var _, defaultRouteV4, _ = net.ParseCIDR("0.0.0.0/0")
+var _, defaultRouteV6, _ = net.ParseCIDR("::/0")
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
 func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
@@ -56,22 +48,14 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		case modeL3, modeL3S:
 			// disable gateway services to add a default gw using dev eth0 only
 			jinfo.DisableGatewayService()
-			defaultRoute, err := ifaceGateway(defaultV4RouteCidr)
-			if err != nil {
-				return err
-			}
-			if err := jinfo.AddStaticRoute(defaultRoute.Destination, defaultRoute.RouteType, defaultRoute.NextHop); err != nil {
+			if jinfo.AddRoute(types.Route{Destination: defaultRouteV4}); err != nil {
 				return fmt.Errorf("failed to set an ipvlan l3/l3s mode ipv4 default gateway: %v", err)
 			}
 			log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv4_Addr: %s, Ipvlan_Mode: %s, Parent: %s",
 				ep.addr.IP.String(), n.config.IpvlanMode, n.config.Parent)
 			// If the endpoint has a v6 address, set a v6 default route
 			if ep.addrv6 != nil {
-				default6Route, err := ifaceGateway(defaultV6RouteCidr)
-				if err != nil {
-					return err
-				}
-				if err = jinfo.AddStaticRoute(default6Route.Destination, default6Route.RouteType, default6Route.NextHop); err != nil {
+				if jinfo.AddRoute(types.Route{Destination: defaultRouteV6}); err != nil {
 					return fmt.Errorf("failed to set an ipvlan l3/l3s mode ipv6 default gateway: %v", err)
 				}
 				log.G(context.TODO()).Debugf("Ipvlan Endpoint Joined with IPv6_Addr: %s, Ipvlan_Mode: %s, Parent: %s",
@@ -150,21 +134,6 @@ func (d *driver) Leave(nid, eid string) error {
 	}
 
 	return nil
-}
-
-// ifaceGateway returns a static route for either v4/v6 to be set to the container eth0
-func ifaceGateway(dfNet string) (*staticRoute, error) {
-	nh, dst, err := net.ParseCIDR(dfNet)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse default route %v", err)
-	}
-	defaultRoute := &staticRoute{
-		Destination: dst,
-		RouteType:   types.CONNECTED,
-		NextHop:     nh,
-	}
-
-	return defaultRoute, nil
 }
 
 // getSubnetforIPv4 returns the ipv4 subnet to which the given IP belongs

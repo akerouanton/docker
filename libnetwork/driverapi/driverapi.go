@@ -1,6 +1,10 @@
 package driverapi
 
-import "net"
+import (
+	"net"
+
+	"github.com/docker/docker/libnetwork/types"
+)
 
 // NetworkPluginEndpointType represents the Endpoint Type used by Plugin system
 const NetworkPluginEndpointType = "NetworkDriver"
@@ -117,9 +121,9 @@ type JoinInfo interface {
 	// SetGatewayIPv6 sets the default IPv6 gateway when a container joins the endpoint.
 	SetGatewayIPv6(net.IP) error
 
-	// AddStaticRoute adds a route to the sandbox.
+	// AddRoute adds a route to the sandbox.
 	// It may be used in addition to or instead of a default gateway (as above).
-	AddStaticRoute(destination *net.IPNet, routeType int, nextHop net.IP) error
+	AddRoute(route types.Route)
 
 	// DisableGatewayService tells libnetwork not to provide Default GW for the container
 	DisableGatewayService()

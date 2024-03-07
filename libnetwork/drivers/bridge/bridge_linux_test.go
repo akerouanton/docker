@@ -538,7 +538,7 @@ type testEndpoint struct {
 	iface  *testInterface
 	gw     net.IP
 	gw6    net.IP
-	routes []types.StaticRoute
+	routes []types.Route
 	opts   driverapi.EndpointOptions
 }
 
@@ -631,9 +631,8 @@ func (te *testEndpoint) SetGatewayIPv6(gw6 net.IP) error {
 	return nil
 }
 
-func (te *testEndpoint) AddStaticRoute(destination *net.IPNet, routeType int, nextHop net.IP) error {
-	te.routes = append(te.routes, types.StaticRoute{Destination: destination, RouteType: routeType, NextHop: nextHop})
-	return nil
+func (te *testEndpoint) AddRoute(route types.Route) {
+	te.routes = append(te.routes, route)
 }
 
 func (te *testEndpoint) AddTableEntry(tableName string, key string, value []byte) error {

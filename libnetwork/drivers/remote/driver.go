@@ -318,9 +318,7 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 			return err
 		}
 		for _, route := range routes {
-			if jinfo.AddStaticRoute(route.Destination, route.RouteType, route.NextHop) != nil {
-				return fmt.Errorf("failed to set static route: %v", route)
-			}
+			jinfo.AddRoute(route)
 		}
 	}
 	if res.DisableGatewayService {
@@ -399,11 +397,11 @@ func (d *driver) DiscoverDelete(dType discoverapi.DiscoveryType, data interface{
 	return d.call("DiscoverDelete", notif, &api.DiscoveryResponse{})
 }
 
-func parseStaticRoutes(r api.JoinResponse) ([]*types.StaticRoute, error) {
-	routes := make([]*types.StaticRoute, len(r.StaticRoutes))
+func parseStaticRoutes(r api.JoinResponse) ([]types.Route, error) {
+	routes := make([]types.Route, len(r.StaticRoutes))
 	for i, inRoute := range r.StaticRoutes {
+		var outRoute types.Route
 		var err error
-		outRoute := &types.StaticRoute{RouteType: inRoute.RouteType}
 
 		if inRoute.Destination != "" {
 			if outRoute.Destination, err = types.ParseCIDR(inRoute.Destination); err != nil {

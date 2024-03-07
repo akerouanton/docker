@@ -314,7 +314,7 @@ type Namespace struct {
 	iFaces              []*Interface
 	gw                  net.IP
 	gwv6                net.IP
-	staticRoutes        []*types.StaticRoute
+	routes              []types.Route
 	neighbors           []*neigh
 	nextIfIndex         map[string]int
 	isDefault           bool
@@ -471,7 +471,7 @@ func (n *Namespace) Destroy() error {
 }
 
 // Restore restores the network namespace.
-func (n *Namespace) Restore(interfaces map[Iface][]IfaceOption, routes []*types.StaticRoute, gw net.IP, gw6 net.IP) error {
+func (n *Namespace) Restore(interfaces map[Iface][]IfaceOption, routes []types.Route, gw net.IP, gw6 net.IP) error {
 	// restore interfaces
 	for iface, opts := range interfaces {
 		i, err := newInterface(n, iface.SrcName, iface.DstPrefix, opts...)
@@ -534,7 +534,7 @@ func (n *Namespace) Restore(interfaces map[Iface][]IfaceOption, routes []*types.
 
 	// restore routes and gateways
 	n.mu.Lock()
-	n.staticRoutes = append(n.staticRoutes, routes...)
+	n.routes = append(n.routes, routes...)
 	if len(gw) > 0 {
 		n.gw = gw
 	}

@@ -95,9 +95,7 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		if sub == s {
 			continue
 		}
-		if err = jinfo.AddStaticRoute(sub.subnetIP, types.NEXTHOP, s.gwIP.IP); err != nil {
-			log.G(context.TODO()).Errorf("Adding subnet %s static route in network %q failed\n", s.subnetIP, n.id)
-		}
+		jinfo.AddRoute(types.Route{Destination: sub.subnetIP, NextHop: s.gwIP.IP})
 	}
 
 	if iNames := jinfo.InterfaceName(); iNames != nil {

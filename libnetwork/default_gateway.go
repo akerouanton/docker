@@ -133,7 +133,7 @@ func (sb *Sandbox) needDefaultGW() bool {
 		if len(ep.Gateway()) > 0 {
 			return false
 		}
-		for _, r := range ep.StaticRoutes() {
+		for _, r := range ep.Routes() {
 			if r.Destination != nil && r.Destination.String() == "0.0.0.0/0" {
 				return false
 			}

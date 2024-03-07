@@ -199,15 +199,9 @@ func (test *testEndpoint) SetNames(src string, dst string) error {
 	return nil
 }
 
-func (test *testEndpoint) AddStaticRoute(destination *net.IPNet, routeType int, nextHop net.IP) error {
-	compareIPNets(test.t, "Destination", test.destination, *destination)
-	compareIPs(test.t, "NextHop", test.nextHop, nextHop)
-
-	if test.routeType != routeType {
-		test.t.Fatalf(`Wrong RouteType; expected "%d", got "%d"`, test.routeType, routeType)
-	}
-
-	return nil
+func (test *testEndpoint) AddRoute(route types.Route) {
+	compareIPNets(test.t, "Destination", test.destination, *route.Destination)
+	compareIPs(test.t, "NextHop", test.nextHop, route.NextHop)
 }
 
 func (test *testEndpoint) DisableGatewayService() {

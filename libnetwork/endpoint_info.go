@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/types"
 )
@@ -24,9 +25,9 @@ type EndpointInfo interface {
 	// This will only return a valid value if a container has joined the endpoint.
 	GatewayIPv6() net.IP
 
-	// StaticRoutes returns the list of static routes configured by the network
-	// driver when the container joins a network
-	StaticRoutes() []*types.StaticRoute
+	// Routes returns the list of routes configured by the network driver when
+	// the container joins a network.
+	Routes() []types.Route
 
 	// Sandbox returns the attached sandbox if there, nil otherwise.
 	Sandbox() *Sandbox
@@ -158,7 +159,7 @@ func (epi *EndpointInterface) CopyTo(dstEpi *EndpointInterface) error {
 type endpointJoinInfo struct {
 	gw                    net.IP
 	gw6                   net.IP
-	StaticRoutes          []*types.StaticRoute
+	Routes                []types.Route
 	driverTableEntries    []*tableEntry
 	disableGatewayService bool
 }
@@ -244,23 +245,13 @@ func (ep *Endpoint) InterfaceName() driverapi.InterfaceNameInfo {
 	return ep.iface
 }
 
-// AddStaticRoute adds a route to the sandbox.
+// AddRoute adds a route to the sandbox.
 // It may be used in addition to or instead of a default gateway (as above).
-func (ep *Endpoint) AddStaticRoute(destination *net.IPNet, routeType int, nextHop net.IP) error {
+func (ep *Endpoint) AddRoute(route types.Route) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
-	if routeType == types.NEXTHOP {
-		// If the route specifies a next-hop, then it's loosely routed (i.e. not bound to a particular interface).
-		ep.joinInfo.StaticRoutes = append(ep.joinInfo.StaticRoutes, &types.StaticRoute{
-			Destination: destination,
-			RouteType:   routeType,
-			NextHop:     nextHop,
-		})
-	} else {
-		// If the route doesn't specify a next-hop, it must be a connected route, bound to an interface.
-		ep.iface.routes = append(ep.iface.routes, destination)
-	}
-	return nil
+
+	ep.joinInfo.Routes = append(ep.joinInfo.Routes, route)
 }
 
 // AddTableEntry adds a table entry to the gossip layer
@@ -294,9 +285,9 @@ func (ep *Endpoint) LoadBalancer() bool {
 	return ep.loadBalancer
 }
 
-// StaticRoutes returns the list of static routes configured by the network
-// driver when the container joins a network
-func (ep *Endpoint) StaticRoutes() []*types.StaticRoute {
+// Routes returns the list of routes configured by the network driver when the
+// container joins a network.
+func (ep *Endpoint) Routes() []types.Route {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
@@ -304,7 +295,7 @@ func (ep *Endpoint) StaticRoutes() []*types.StaticRoute {
 		return nil
 	}
 
-	return ep.joinInfo.StaticRoutes
+	return ep.joinInfo.Routes
 }
 
 // Gateway returns the IPv4 gateway assigned by the driver.
@@ -376,7 +367,7 @@ func (epj *endpointJoinInfo) MarshalJSON() ([]byte, error) {
 		epMap["gw6"] = epj.gw6.String()
 	}
 	epMap["disableGatewayService"] = epj.disableGatewayService
-	epMap["StaticRoutes"] = epj.StaticRoutes
+	epMap["StaticRoutes"] = epj.Routes
 	return json.Marshal(epMap)
 }
 
@@ -396,31 +387,29 @@ func (epj *endpointJoinInfo) UnmarshalJSON(b []byte) error {
 	}
 	epj.disableGatewayService = epMap["disableGatewayService"].(bool)
 
-	var tStaticRoute []types.StaticRoute
+	var tRoutes []types.Route
 	if v, ok := epMap["StaticRoutes"]; ok {
 		tb, _ := json.Marshal(v)
-		var tStaticRoute []types.StaticRoute
 		// TODO(cpuguy83): Linter caught that we aren't checking errors here
 		// I don't know why we aren't other than potentially the data is not always expected to be right?
 		// This is why I'm not adding the error check.
 		//
 		// In any case for posterity please if you figure this out document it or check the error
-		json.Unmarshal(tb, &tStaticRoute) //nolint:errcheck
+		json.Unmarshal(tb, &tRoutes) //nolint:errcheck
 	}
-	var StaticRoutes []*types.StaticRoute
-	for _, r := range tStaticRoute {
-		r := r
-		StaticRoutes = append(StaticRoutes, &r)
-	}
-	epj.StaticRoutes = StaticRoutes
+	epj.Routes = tRoutes
 
 	return nil
 }
 
 func (epj *endpointJoinInfo) CopyTo(dstEpj *endpointJoinInfo) error {
 	dstEpj.disableGatewayService = epj.disableGatewayService
-	dstEpj.StaticRoutes = make([]*types.StaticRoute, len(epj.StaticRoutes))
-	copy(dstEpj.StaticRoutes, epj.StaticRoutes)
+	dstEpj.Routes = sliceutil.Map(epj.Routes, func(r types.Route) types.Route {
+		return types.Route{
+			Destination: r.Destination,
+			NextHop:     r.NextHop,
+		}
+	})
 	dstEpj.driverTableEntries = make([]*tableEntry, len(epj.driverTableEntries))
 	copy(dstEpj.driverTableEntries, epj.driverTableEntries)
 	dstEpj.gw = types.GetIPCopy(epj.gw)

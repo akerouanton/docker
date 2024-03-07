@@ -40,7 +40,7 @@ func releaseOSSboxResources(ns *osl.Namespace, ep *Endpoint) {
 	}
 
 	// Remove non-interface routes.
-	for _, r := range joinInfo.StaticRoutes {
+	for _, r := range joinInfo.Routes {
 		if err := ns.RemoveStaticRoute(r); err != nil {
 			log.G(context.TODO()).Debugf("Remove route failed: %v", err)
 		}
@@ -209,7 +209,7 @@ func (sb *Sandbox) releaseOSSbox() error {
 }
 
 func (sb *Sandbox) restoreOslSandbox() error {
-	var routes []*types.StaticRoute
+	var routes []types.Route
 
 	// restore osl sandbox
 	interfaces := make(map[osl.Iface][]osl.IfaceOption)
@@ -239,7 +239,7 @@ func (sb *Sandbox) restoreOslSandbox() error {
 		}
 		interfaces[osl.Iface{SrcName: i.srcName, DstPrefix: i.dstPrefix}] = ifaceOptions
 		if joinInfo != nil {
-			routes = append(routes, joinInfo.StaticRoutes...)
+			routes = append(routes, joinInfo.Routes...)
 		}
 		if ep.needResolver() {
 			sb.startResolver(true)
@@ -307,7 +307,7 @@ func (sb *Sandbox) populateNetworkResources(ep *Endpoint) error {
 
 	if joinInfo != nil {
 		// Set up non-interface routes.
-		for _, r := range joinInfo.StaticRoutes {
+		for _, r := range joinInfo.Routes {
 			if err := sb.osSbox.AddStaticRoute(r); err != nil {
 				return fmt.Errorf("failed to add static route %s: %v", r.Destination.String(), err)
 			}
