@@ -473,6 +473,16 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		return fmt.Errorf("failed to get network from store during join: %v", err)
 	}
 
+	d, err := n.driver(true)
+	if err != nil {
+		return fmt.Errorf("failed to get driver during join: %v", err)
+	}
+
+	epDrv, ok := d.(driverapi.EndpointDriver)
+	if !ok {
+		return nil
+	}
+
 	ep, err = n.getEndpointFromStore(ep.ID())
 	if err != nil {
 		return fmt.Errorf("failed to get endpoint from store during join: %v", err)
@@ -499,16 +509,6 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 	nid := n.ID()
 
 	ep.processOptions(options...)
-
-	d, err := n.driver(true)
-	if err != nil {
-		return fmt.Errorf("failed to get driver during join: %v", err)
-	}
-
-	epDrv, ok := d.(driverapi.EndpointDriver)
-	if !ok {
-		return nil
-	}
 
 	err = epDrv.Join(nid, epid, sb.Key(), ep, sb.Labels())
 	if err != nil {
@@ -696,6 +696,17 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 		return fmt.Errorf("failed to get network from store during leave: %v", err)
 	}
 
+	d, err := n.driver(!force)
+	if err != nil {
+		return fmt.Errorf("failed to get driver during endpoint leave: %v", err)
+	}
+
+	epDrv, ok := d.(driverapi.EndpointDriver)
+	if !ok {
+		// There's no sandbox to leave if the driver is not a driverapi.EndpointDriver.
+		return nil
+	}
+
 	ep, err = n.getEndpointFromStore(ep.ID())
 	if err != nil {
 		return fmt.Errorf("failed to get endpoint from store during leave: %v", err)
@@ -712,11 +723,6 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 		return types.ForbiddenErrorf("unexpected sandbox ID in leave request. Expected %s. Got %s", ep.sandboxID, sb.ID())
 	}
 
-	d, err := n.driver(!force)
-	if err != nil {
-		return fmt.Errorf("failed to get driver during endpoint leave: %v", err)
-	}
-
 	ep.mu.Lock()
 	ep.sandboxID = ""
 	ep.network = n
@@ -726,19 +732,17 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 	extEp := sb.getGatewayEndpoint()
 	moveExtConn := extEp != nil && (extEp.ID() == ep.ID())
 
-	if epDrv, ok := d.(driverapi.EndpointDriver); d != nil && ok {
-		if moveExtConn {
-			log.G(context.TODO()).Debugf("Revoking external connectivity on endpoint %s (%s)", ep.Name(), ep.ID())
-			if err := d.RevokeExternalConnectivity(n.id, ep.id); err != nil {
-				log.G(context.TODO()).Warnf("driver failed revoking external connectivity on endpoint %s (%s): %v",
-					ep.Name(), ep.ID(), err)
-			}
+	if moveExtConn {
+		log.G(context.TODO()).Debugf("Revoking external connectivity on endpoint %s (%s)", ep.Name(), ep.ID())
+		if err := d.RevokeExternalConnectivity(n.id, ep.id); err != nil {
+			log.G(context.TODO()).Warnf("driver failed revoking external connectivity on endpoint %s (%s): %v",
+				ep.Name(), ep.ID(), err)
 		}
+	}
 
-		if err := epDrv.Leave(n.id, ep.id); err != nil {
-			if _, ok := err.(types.MaskableError); !ok {
-				log.G(context.TODO()).Warnf("driver error disconnecting container %s : %v", ep.name, err)
-			}
+	if err := epDrv.Leave(n.id, ep.id); err != nil {
+		if _, ok := err.(types.MaskableError); !ok {
+			log.G(context.TODO()).Warnf("driver error disconnecting container %s : %v", ep.name, err)
 		}
 	}
 
