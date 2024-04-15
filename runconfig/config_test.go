@@ -66,6 +66,23 @@ func TestDecodeContainerConfig(t *testing.T) {
 	}
 }
 
+func TestDecodeContainerConfigDNS(t *testing.T) {
+	dns := func(v []string) ContainerConfigWrapper {
+		return ContainerConfigWrapper{
+			Config: &container.Config{},
+			HostConfig: &container.HostConfig{
+				NetworkMode: "none",
+				DNS:         v,
+			},
+		}
+	}
+
+	assert.Check(t, is.ErrorContains(
+		callDecodeContainerConfig(t, dns([]string{"127.0.0.11", "8.8.8.8"})),
+		`the embedded DNS resolver at 127.0.0.11 can't be used as an upstream DNS resolver`))
+	assert.Check(t, is.Nil(callDecodeContainerConfig(t, dns([]string{"8.8.8.8"}))))
+}
+
 // TestDecodeContainerConfigIsolation validates isolation passed
 // to the daemon in the hostConfig structure. Note this is platform specific
 // as to what level of container isolation is supported.

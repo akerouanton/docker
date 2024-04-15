@@ -2,7 +2,9 @@ package runconfig // import "github.com/docker/docker/runconfig"
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"slices"
 
 	"github.com/docker/docker/api/types/container"
 	networktypes "github.com/docker/docker/api/types/network"
@@ -61,6 +63,9 @@ func decodeContainerConfig(src io.Reader, si *sysinfo.SysInfo) (*container.Confi
 	}
 	if err := validateReadonlyRootfs(hc); err != nil {
 		return nil, nil, nil, err
+	}
+	if slices.Contains(hc.DNS, "127.0.0.11") {
+		return nil, nil, nil, errors.New("the embedded DNS resolver at 127.0.0.11 can't be used as an upstream DNS resolver")
 	}
 	if w.Config != nil && w.Config.Volumes == nil {
 		w.Config.Volumes = make(map[string]struct{})
