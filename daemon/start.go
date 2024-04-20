@@ -114,7 +114,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, daemonCfg *configStore
 		return err
 	}
 
-	if err := daemon.initializeNetworking(&daemonCfg.Config, container); err != nil {
+	if err := daemon.initializeNetworking(ctx, &daemonCfg.Config, container); err != nil {
 		return err
 	}
 
@@ -180,7 +180,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, daemonCfg *configStore
 	}()
 
 	// TODO(mlaventure): we need to specify checkpoint options here
-	tsk, err := ctr.NewTask(context.TODO(), // Passing ctx caused integration tests to be stuck in the cleanup phase
+	tsk, err := ctr.NewTask(ctx, // Passing ctx caused integration tests to be stuck in the cleanup phase
 		checkpointDir, container.StreamConfig.Stdin() != nil || container.Config.Tty,
 		container.InitializeStdio)
 	if err != nil {
@@ -199,7 +199,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, daemonCfg *configStore
 		return err
 	}
 
-	if err := tsk.Start(context.TODO()); err != nil { // passing ctx caused integration tests to be stuck in the cleanup phase
+	if err := tsk.Start(ctx); err != nil { // passing ctx caused integration tests to be stuck in the cleanup phase
 		return setExitCodeFromError(container.SetExitCode, err)
 	}
 
@@ -232,7 +232,7 @@ func (daemon *Daemon) Cleanup(ctx context.Context, container *container.Containe
 		}
 	}
 
-	daemon.releaseNetwork(container)
+	daemon.releaseNetwork(ctx, container)
 
 	if err := container.UnmountIpcMount(); err != nil {
 		log.G(ctx).Warnf("%s cleanup: failed to unmount IPC: %s", container.ID, err)

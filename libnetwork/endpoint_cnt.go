@@ -1,6 +1,7 @@
 package libnetwork
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -113,7 +114,7 @@ func (ec *endpointCnt) updateStore() error {
 	count := ec.EndpointCnt()
 	n := ec.n
 	for {
-		if err := ec.n.getController().updateToStore(ec); err == nil || err != datastore.ErrKeyModified {
+		if err := ec.n.getController().updateToStore(context.TODO(), ec); err == nil || err != datastore.ErrKeyModified {
 			return err
 		}
 		if err := store.GetObject(ec); err != nil {
@@ -154,7 +155,7 @@ retry:
 	}
 	ec.Unlock()
 
-	if err := ec.n.getController().updateToStore(ec); err != nil {
+	if err := ec.n.getController().updateToStore(context.TODO(), ec); err != nil {
 		if err == datastore.ErrKeyModified {
 			if err := store.GetObject(ec); err != nil {
 				return fmt.Errorf("could not update the kvobject to latest when trying to atomic add endpoint count: %v", err)

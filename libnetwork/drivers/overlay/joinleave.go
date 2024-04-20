@@ -17,7 +17,7 @@ import (
 )
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
-func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
+func (d *driver) Join(_ context.Context, nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, options map[string]interface{}) error {
 	if err := validateID(nid, eid); err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (d *driver) Join(nid, eid string, sboxKey string, jinfo driverapi.JoinInfo,
 		return err
 	}
 
-	if err = sbox.AddInterface(overlayIfName, "veth", osl.WithMaster(s.brName)); err != nil {
+	if err = sbox.AddInterface(context.Background(), overlayIfName, "veth", osl.WithMaster(s.brName)); err != nil {
 		return fmt.Errorf("could not add veth pair inside the network sandbox: %v", err)
 	}
 

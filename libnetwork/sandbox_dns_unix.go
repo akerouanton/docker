@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/libnetwork/internal/resolvconf"
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -29,12 +30,12 @@ const (
 // finishInitDNS is to be called after the container namespace has been created,
 // before it the user process is started. The container's support for IPv6 can be
 // determined at this point.
-func (sb *Sandbox) finishInitDNS() error {
+func (sb *Sandbox) finishInitDNS(ctx context.Context) error {
 	if err := sb.buildHostsFile(); err != nil {
 		return errdefs.System(err)
 	}
 	for _, ep := range sb.Endpoints() {
-		if err := sb.updateHostsFile(ep.getEtcHostsAddrs()); err != nil {
+		if err := sb.updateHostsFile(ctx, ep.getEtcHostsAddrs()); err != nil {
 			return errdefs.System(err)
 		}
 	}
@@ -68,7 +69,7 @@ func (sb *Sandbox) startResolver(restore bool) {
 		}
 		sb.resolver.SetExtServers(sb.extDNS)
 
-		if err = sb.osSbox.InvokeFunc(sb.resolver.SetupFunc(0)); err != nil {
+		if err = sb.osSbox.InvokeFunc(sb.resolver.SetupFunc(context.TODO(), 0)); err != nil {
 			log.G(context.TODO()).Errorf("Resolver Setup function failed for container %s, %q", sb.ContainerID(), err)
 			return
 		}
@@ -132,7 +133,10 @@ func (sb *Sandbox) buildHostsFile() error {
 	return sb.updateParentHosts()
 }
 
-func (sb *Sandbox) updateHostsFile(ifaceIPs []string) error {
+func (sb *Sandbox) updateHostsFile(ctx context.Context, ifaceIPs []string) error {
+	_, span := otel.Tracer("").Start(ctx, "libnetwork.updateHostsFile")
+	defer span.End()
+
 	if len(ifaceIPs) == 0 {
 		return nil
 	}
@@ -295,7 +299,10 @@ func (sb *Sandbox) setupDNS() error {
 }
 
 // Called when an endpoint has joined the sandbox.
-func (sb *Sandbox) updateDNS(ipv6Enabled bool) error {
+func (sb *Sandbox) updateDNS(ctx context.Context, ipv6Enabled bool) error {
+	_, span := otel.Tracer("").Start(ctx, "libnetwork.updateDNS")
+	defer span.End()
+
 	if mod, err := resolvconf.UserModified(sb.config.resolvConfPath, sb.config.resolvConfHashFile); err != nil || mod {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"go.opentelemetry.io/otel"
 
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/errdefs"
@@ -15,6 +16,9 @@ import (
 // initializeCreatedTask performs any initialization that needs to be done to
 // prepare a freshly-created task to be started.
 func (daemon *Daemon) initializeCreatedTask(ctx context.Context, tsk types.Task, container *container.Container, spec *specs.Spec) error {
+	ctx, span := otel.Tracer("").Start(ctx, "daemon.initializeCreatedTask")
+	defer span.End()
+
 	if !container.Config.NetworkDisabled {
 		nspath, ok := oci.NamespacePath(spec, specs.NetworkNamespace)
 		if ok && nspath == "" { // the runtime has been instructed to create a new network namespace for tsk.
@@ -22,7 +26,7 @@ func (daemon *Daemon) initializeCreatedTask(ctx context.Context, tsk types.Task,
 			if err != nil {
 				return errdefs.System(err)
 			}
-			if err := sb.SetKey(fmt.Sprintf("/proc/%d/ns/net", tsk.Pid())); err != nil {
+			if err := sb.SetKey(ctx, fmt.Sprintf("/proc/%d/ns/net", tsk.Pid())); err != nil {
 				return errdefs.System(err)
 			}
 		}

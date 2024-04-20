@@ -10,6 +10,9 @@ import (
 	"github.com/docker/docker/libnetwork/netutils"
 	"github.com/docker/docker/libnetwork/osl"
 	"github.com/docker/docker/libnetwork/types"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func releaseOSSboxResources(ns *osl.Namespace, ep *Endpoint) {
@@ -112,7 +115,7 @@ func (sb *Sandbox) ExecFunc(f func()) error {
 }
 
 // SetKey updates the Sandbox Key.
-func (sb *Sandbox) SetKey(basePath string) error {
+func (sb *Sandbox) SetKey(ctx context.Context, basePath string) error {
 	start := time.Now()
 	defer func() {
 		log.G(context.TODO()).Debugf("sandbox set key processing took %s for container %s", time.Since(start), sb.ContainerID())
@@ -153,7 +156,7 @@ func (sb *Sandbox) SetKey(basePath string) error {
 	if oldosSbox != nil && sb.resolver != nil {
 		sb.resolver.Stop()
 
-		if err := sb.osSbox.InvokeFunc(sb.resolver.SetupFunc(0)); err == nil {
+		if err := sb.osSbox.InvokeFunc(sb.resolver.SetupFunc(ctx, 0)); err == nil {
 			if err := sb.resolver.Start(); err != nil {
 				log.G(context.TODO()).Errorf("Resolver Start failed for container %s, %q", sb.ContainerID(), err)
 			}
@@ -162,12 +165,12 @@ func (sb *Sandbox) SetKey(basePath string) error {
 		}
 	}
 
-	if err := sb.finishInitDNS(); err != nil {
+	if err := sb.finishInitDNS(ctx); err != nil {
 		return err
 	}
 
 	for _, ep := range sb.Endpoints() {
-		if err = sb.populateNetworkResources(ep); err != nil {
+		if err = sb.populateNetworkResources(ctx, ep); err != nil {
 			return err
 		}
 	}
@@ -259,7 +262,11 @@ func (sb *Sandbox) restoreOslSandbox() error {
 	return sb.osSbox.Restore(interfaces, routes, gwep.joinInfo.gw, gwep.joinInfo.gw6)
 }
 
-func (sb *Sandbox) populateNetworkResources(ep *Endpoint) error {
+func (sb *Sandbox) populateNetworkResources(ctx context.Context, ep *Endpoint) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.Sandbox.populateNetworkResources", trace.WithAttributes(
+		attribute.String("endpoint.Name", ep.Name())))
+	defer span.End()
+
 	sb.mu.Lock()
 	if sb.osSbox == nil {
 		sb.mu.Unlock()
@@ -297,7 +304,7 @@ func (sb *Sandbox) populateNetworkResources(ep *Endpoint) error {
 			ifaceOptions = append(ifaceOptions, osl.WithMACAddress(i.mac))
 		}
 
-		if err := sb.osSbox.AddInterface(i.srcName, i.dstPrefix, ifaceOptions...); err != nil {
+		if err := sb.osSbox.AddInterface(ctx, i.srcName, i.dstPrefix, ifaceOptions...); err != nil {
 			return fmt.Errorf("failed to add interface %s to sandbox: %v", i.srcName, err)
 		}
 
@@ -346,7 +353,7 @@ func (sb *Sandbox) populateNetworkResources(ep *Endpoint) error {
 	// not bother updating the store. The sandbox object will be
 	// deleted anyway
 	if !inDelete {
-		return sb.storeUpdate()
+		return sb.storeUpdate(ctx)
 	}
 
 	return nil

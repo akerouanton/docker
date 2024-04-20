@@ -108,8 +108,11 @@ func (r *Resolver) log(ctx context.Context) *log.Entry {
 
 // SetupFunc returns the setup function that should be run in the container's
 // network namespace.
-func (r *Resolver) SetupFunc(port int) func() {
+func (r *Resolver) SetupFunc(ctx context.Context, port int) func() {
 	return func() {
+		_, span := otel.Tracer("").Start(ctx, "libnetwork.resolver.SetupFunc")
+		defer span.End()
+
 		var err error
 
 		// DNS operates primarily on UDP
