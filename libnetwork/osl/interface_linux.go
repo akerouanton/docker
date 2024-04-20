@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 // newInterface creates a new interface in the given namespace using the
@@ -353,12 +354,16 @@ func configureInterface(ctx context.Context, nlh *netlink.Handle, iface netlink.
 		{setInterfaceLinkLocalIPs, fmt.Sprintf("error setting interface %q link local IPs to %v", ifaceName, i.LinkLocalAddresses())},
 	}
 
+	eg, ctx := errgroup.WithContext(ctx)
+
 	for _, config := range ifaceConfigurators {
-		if err := config.Fn(nlh, iface, i); err != nil {
-			return fmt.Errorf("%s: %v", config.ErrMessage, err)
-		}
+		config := config
+		eg.Go(func() error {
+			return config.Fn(nlh, iface, i)
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
 
 func setInterfaceMaster(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
