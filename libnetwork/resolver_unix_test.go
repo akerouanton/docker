@@ -3,6 +3,7 @@
 package libnetwork
 
 import (
+	"context"
 	"net"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestDNSIPQuery(t *testing.T) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("testep")
+	ep, err := n.CreateEndpoint(context.Background(), "testep")
 	if err != nil {
 		t.Fatal(err)
 	}

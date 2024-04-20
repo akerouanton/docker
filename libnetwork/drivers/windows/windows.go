@@ -605,7 +605,7 @@ func ParseEndpointConnectivity(epOptions map[string]interface{}) (*EndpointConne
 	return ec, nil
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
+func (d *driver) CreateEndpoint(_ context.Context, nid, eid string, ifInfo driverapi.InterfaceInfo, epOptions map[string]interface{}) error {
 	n, err := d.getNetwork(nid)
 	if err != nil {
 		return err

@@ -108,7 +108,7 @@ func TestNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ep, err := network.CreateEndpoint("testep")
+	ep, err := network.CreateEndpoint(context.Background(), "testep")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestDeleteNetworkWithActiveEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ep, err := network.CreateEndpoint("testep")
+	ep, err := network.CreateEndpoint(context.Background(), "testep")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +444,7 @@ func TestUnknownEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = network.CreateEndpoint("")
+	_, err = network.CreateEndpoint(context.Background(), "")
 	if err == nil {
 		t.Fatal("Expected to fail. But instead succeeded")
 	}
@@ -452,7 +452,7 @@ func TestUnknownEndpoint(t *testing.T) {
 		t.Fatalf("Expected to fail with ErrInvalidName error. Actual error: %v", err)
 	}
 
-	ep, err := network.CreateEndpoint("testep")
+	ep, err := network.CreateEndpoint(context.Background(), "testep")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestNetworkEndpointsWalkers(t *testing.T) {
 		}
 	}()
 
-	ep11, err := net1.CreateEndpoint("ep11")
+	ep11, err := net1.CreateEndpoint(context.Background(), "ep11")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +499,7 @@ func TestNetworkEndpointsWalkers(t *testing.T) {
 		}
 	}()
 
-	ep12, err := net1.CreateEndpoint("ep12")
+	ep12, err := net1.CreateEndpoint(context.Background(), "ep12")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,7 +617,7 @@ func TestDuplicateEndpoint(t *testing.T) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("ep1")
+	ep, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +627,7 @@ func TestDuplicateEndpoint(t *testing.T) {
 		}
 	}()
 
-	ep2, err := n.CreateEndpoint("ep1")
+	ep2, err := n.CreateEndpoint(context.Background(), "ep1")
 	defer func() {
 		// Cleanup ep2 as well, else network cleanup might fail for failure cases
 		if ep2 != nil {
@@ -767,7 +767,7 @@ func TestNetworkQuery(t *testing.T) {
 		}
 	}()
 
-	ep11, err := net1.CreateEndpoint("ep11")
+	ep11, err := net1.CreateEndpoint(context.Background(), "ep11")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +777,7 @@ func TestNetworkQuery(t *testing.T) {
 		}
 	}()
 
-	ep12, err := net1.CreateEndpoint("ep12")
+	ep12, err := net1.CreateEndpoint(context.Background(), "ep12")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -865,7 +865,7 @@ func TestEndpointDeleteWithActiveContainer(t *testing.T) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("ep1")
+	ep, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -925,7 +925,7 @@ func TestEndpointMultipleJoins(t *testing.T) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("ep1")
+	ep, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1013,12 +1013,12 @@ func TestLeaveAll(t *testing.T) {
 		}
 	}()
 
-	ep1, err := n.CreateEndpoint("ep1")
+	ep1, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ep2, err := n2.CreateEndpoint("ep2")
+	ep2, err := n2.CreateEndpoint(context.Background(), "ep2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1062,7 +1062,7 @@ func TestContainerInvalidLeave(t *testing.T) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("ep1")
+	ep, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1127,12 +1127,12 @@ func TestEndpointUpdateParent(t *testing.T) {
 		}
 	}()
 
-	ep1, err := n.CreateEndpoint("ep1")
+	ep1, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ep2, err := n.CreateEndpoint("ep2")
+	ep2, err := n.CreateEndpoint(context.Background(), "ep2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1337,7 +1337,7 @@ func TestHost(t *testing.T) {
 	}()
 
 	network := makeTesthostNetwork(t, controller)
-	ep1, err := network.CreateEndpoint("testep1")
+	ep1, err := network.CreateEndpoint(context.Background(), "testep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1346,7 +1346,7 @@ func TestHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ep2, err := network.CreateEndpoint("testep2")
+	ep2, err := network.CreateEndpoint(context.Background(), "testep2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1386,7 +1386,7 @@ func TestHost(t *testing.T) {
 		}
 	}()
 
-	ep3, err := network.CreateEndpoint("testep3")
+	ep3, err := network.CreateEndpoint(context.Background(), "testep3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1431,7 +1431,7 @@ func TestBridgeIpv6FromMac(t *testing.T) {
 	mac := net.HardwareAddr{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}
 	epOption := options.Generic{netlabel.MacAddress: mac}
 
-	ep, err := network.CreateEndpoint("testep", libnetwork.EndpointOptionGeneric(epOption))
+	ep, err := network.CreateEndpoint(context.Background(), "testep", libnetwork.EndpointOptionGeneric(epOption))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1507,7 +1507,7 @@ func TestEndpointJoin(t *testing.T) {
 		}
 	}()
 
-	ep1, err := n1.CreateEndpoint("ep1")
+	ep1, err := n1.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1623,7 +1623,7 @@ func TestEndpointJoin(t *testing.T) {
 		}
 	}()
 
-	ep2, err := n2.CreateEndpoint("ep2")
+	ep2, err := n2.CreateEndpoint(context.Background(), "ep2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1687,7 +1687,7 @@ func externalKeyTest(t *testing.T, reexec bool) {
 		}
 	}()
 
-	ep, err := n.CreateEndpoint("ep1")
+	ep, err := n.CreateEndpoint(context.Background(), "ep1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1698,7 +1698,7 @@ func externalKeyTest(t *testing.T, reexec bool) {
 		}
 	}()
 
-	ep2, err := n2.CreateEndpoint("ep2")
+	ep2, err := n2.CreateEndpoint(context.Background(), "ep2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1878,7 +1878,7 @@ func TestResolvConf(t *testing.T) {
 				assert.Check(t, err)
 			}()
 
-			ep, err := n.CreateEndpoint("ep", tc.epOpts...)
+			ep, err := n.CreateEndpoint(context.Background(), "ep", tc.epOpts...)
 			assert.NilError(t, err)
 			defer func() {
 				err := ep.Delete(false)
@@ -1984,17 +1984,17 @@ func TestParallel(t *testing.T) {
 	}
 	defer net2.Delete()
 
-	_, err = net1.CreateEndpoint("pep1")
+	_, err = net1.CreateEndpoint(context.Background(), "pep1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = net2.CreateEndpoint("pep2")
+	_, err = net2.CreateEndpoint(context.Background(), "pep2")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = net2.CreateEndpoint("pep3")
+	_, err = net2.CreateEndpoint(context.Background(), "pep3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2052,7 +2052,7 @@ func TestBridge(t *testing.T) {
 		}
 	}()
 
-	ep, err := network.CreateEndpoint("testep")
+	ep, err := network.CreateEndpoint(context.Background(), "testep")
 	if err != nil {
 		t.Fatal(err)
 	}

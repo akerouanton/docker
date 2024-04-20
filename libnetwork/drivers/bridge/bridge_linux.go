@@ -26,6 +26,9 @@ import (
 	"github.com/docker/docker/libnetwork/types"
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -908,13 +911,18 @@ func (d *driver) deleteNetwork(nid string) error {
 	return d.storeDelete(config)
 }
 
-func addToBridge(nlh *netlink.Handle, ifaceName, bridgeName string) error {
+func addToBridge(ctx context.Context, nlh *netlink.Handle, ifaceName, bridgeName string) error {
+	_, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.addToBridge", trace.WithAttributes(
+		attribute.String("ifaceName", ifaceName),
+		attribute.String("bridgeName", bridgeName)))
+	defer span.End()
+
 	lnk, err := nlh.LinkByName(ifaceName)
 	if err != nil {
 		return fmt.Errorf("could not find interface %s: %v", ifaceName, err)
 	}
 	if err := nlh.LinkSetMaster(lnk, &netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: bridgeName}}); err != nil {
-		log.G(context.TODO()).WithError(err).Errorf("Failed to add %s to bridge via netlink", ifaceName)
+		log.G(ctx).WithError(err).Errorf("Failed to add %s to bridge via netlink", ifaceName)
 		return err
 	}
 	return nil
@@ -929,10 +937,14 @@ func setHairpinMode(nlh *netlink.Handle, link netlink.Link, enable bool) error {
 	return nil
 }
 
-func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo, _ map[string]interface{}) error {
+func (d *driver) CreateEndpoint(ctx context.Context, nid, eid string, ifInfo driverapi.InterfaceInfo, _ map[string]interface{}) error {
 	if ifInfo == nil {
 		return errors.New("invalid interface info passed")
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.CreateEndpoint", trace.WithAttributes(
+		attribute.String("eid", eid)))
+	defer span.End()
 
 	// Get the network handler and make sure it exists
 	d.Lock()
@@ -1010,7 +1022,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	defer func() {
 		if err != nil {
 			if err := d.nlh.LinkDel(host); err != nil {
-				log.G(context.TODO()).WithError(err).Warnf("Failed to delete host side interface (%s)'s link", hostIfName)
+				log.G(ctx).WithError(err).Warnf("Failed to delete host side interface (%s)'s link", hostIfName)
 			}
 		}
 	}()
@@ -1023,7 +1035,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	defer func() {
 		if err != nil {
 			if err := d.nlh.LinkDel(sbox); err != nil {
-				log.G(context.TODO()).WithError(err).Warnf("Failed to delete sandbox side interface (%s)'s link", containerIfName)
+				log.G(ctx).WithError(err).Warnf("Failed to delete sandbox side interface (%s)'s link", containerIfName)
 			}
 		}
 	}()
@@ -1045,7 +1057,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	}
 
 	// Attach host side pipe interface into the bridge
-	if err = addToBridge(d.nlh, hostIfName, config.BridgeName); err != nil {
+	if err = addToBridge(ctx, d.nlh, hostIfName, config.BridgeName); err != nil {
 		return fmt.Errorf("adding interface %s to bridge %s failed: %v", hostIfName, config.BridgeName, err)
 	}
 
@@ -1073,7 +1085,7 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	}
 
 	// Up the host interface after finishing all netlink configuration
-	if err = d.nlh.LinkSetUp(host); err != nil {
+	if err = d.linkUp(ctx, host); err != nil {
 		return fmt.Errorf("could not set link up for host interface %s: %v", hostIfName, err)
 	}
 
@@ -1106,6 +1118,14 @@ func (d *driver) CreateEndpoint(nid, eid string, ifInfo driverapi.InterfaceInfo,
 	}
 
 	return nil
+}
+
+func (d *driver) linkUp(ctx context.Context, host netlink.Link) error {
+	_, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.linkUp", trace.WithAttributes(
+		attribute.String("host", host.Attrs().Name)))
+	defer span.End()
+
+	return d.nlh.LinkSetUp(host)
 }
 
 func (d *driver) DeleteEndpoint(nid, eid string) error {
