@@ -72,3 +72,49 @@ func (s *PoolID) String() string {
 func (p *PoolData) String() string {
 	return fmt.Sprintf("PoolData[Children: %d]", len(p.children))
 }
+
+// doubleCursor is used to iterate on both 'a' and 'b' at the same time while
+// maintaining the total order that would arise if both were merged and then
+// sorted. Both 'a' and 'b' have to be sorted beforehand.
+type doubleCursor struct {
+	a      []netip.Prefix
+	b      []netip.Prefix
+	ia, ib int
+	cmp    func(a, b netip.Prefix) bool
+	lastA  bool
+}
+
+func newDoubleCursor(a, b []netip.Prefix, cmp func(a, b netip.Prefix) bool) *doubleCursor {
+	return &doubleCursor{
+		a:   a,
+		b:   b,
+		cmp: cmp,
+	}
+}
+
+func (dc *doubleCursor) Get() netip.Prefix {
+	if dc.ia < len(dc.a) && dc.ib < len(dc.b) {
+		if dc.cmp(dc.a[dc.ia], dc.b[dc.ib]) {
+			dc.lastA = true
+			return dc.a[dc.ia]
+		}
+		dc.lastA = false
+		return dc.b[dc.ib]
+	} else if dc.ia < len(dc.a) {
+		dc.lastA = true
+		return dc.a[dc.ia]
+	} else if dc.ib < len(dc.b) {
+		dc.lastA = false
+		return dc.b[dc.ib]
+	}
+
+	return netip.Prefix{}
+}
+
+func (dc *doubleCursor) Inc() {
+	if dc.lastA {
+		dc.ia++
+	} else {
+		dc.ib++
+	}
+}

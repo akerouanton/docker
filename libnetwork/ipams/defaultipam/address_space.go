@@ -2,29 +2,63 @@ package defaultipam
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/netip"
+	"slices"
 	"sync"
 
 	"github.com/containerd/log"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
 	"github.com/docker/docker/libnetwork/ipamapi"
+	"github.com/docker/docker/libnetwork/ipamutils"
+	"github.com/docker/docker/libnetwork/ipbits"
 	"github.com/docker/docker/libnetwork/types"
 )
 
 // addrSpace contains the pool configurations for the address space
 type addrSpace struct {
-	// Master subnet pools, indexed by the value's stringified PoolData.Pool field.
+	// Ordered list of allocated subnets. This field is used for subnet
+	// allocations.
+	allocated []netip.Prefix
+	// Allocated subnets, indexed by their prefix. Values track address
+	// allocations.
 	subnets map[netip.Prefix]*PoolData
 
-	// Predefined pool for the address space
-	predefined           []netip.Prefix
-	predefinedStartIndex int
+	// predefined pools for the address space
+	predefined []*ipamutils.NetworkToSplit
 
 	mu sync.Mutex
 }
 
-func newAddrSpace(predefined []netip.Prefix) (*addrSpace, error) {
+func newAddrSpace(predefined []*ipamutils.NetworkToSplit) (*addrSpace, error) {
+	for i, p := range predefined {
+		if !p.Base.IsValid() {
+			return nil, errors.New("newAddrSpace: prefix zero found")
+		}
+
+		predefined[i].Base = p.Base.Masked()
+	}
+
+	slices.SortFunc(predefined, func(a, b *ipamutils.NetworkToSplit) int {
+		return netiputil.Compare(a.Base, b.Base)
+	})
+
+	// We need to discard longer overlapping prefixes (sorted after the shorter
+	// one), otherwise the dynamic allocator might consider a predefined
+	// network is fully overlapped, go to the next one, which is a subnet of
+	// the previous, and allocate from it.
+	var last *ipamutils.NetworkToSplit
+	var discarded int
+	for i, imax := 0, len(predefined); i < imax; i++ {
+		p := predefined[i-discarded]
+		if last != nil && last.Overlaps(p.Base) {
+			predefined = slices.Delete(predefined, i-discarded, i-discarded+1)
+			discarded++
+			continue
+		}
+		last = p
+	}
+
 	return &addrSpace{
 		subnets:    map[netip.Prefix]*PoolData{},
 		predefined: predefined,
@@ -52,97 +86,210 @@ func (aSpace *addrSpace) allocateSubnet(nw, sub netip.Prefix) error {
 	return aSpace.allocateSubnetL(nw, sub)
 }
 
+// allocateSubnetL takes a 'nw' parent prefix and a 'sub' prefix. These are
+// '--subnet' and '--ip-range' on the CLI.
+//
+// If 'sub' prefix is specified, we don't check if 'parent' overlaps with
+// existing allocations. However, if no 'sub' prefix is specified, we do check
+// for overlaps. This behavior is weird and leads to the inconsistencies
+// documented in https://github.com/moby/moby/issues/46756.
 func (aSpace *addrSpace) allocateSubnetL(nw, sub netip.Prefix) error {
 	// If master pool, check for overlap
 	if sub == (netip.Prefix{}) {
 		if aSpace.overlaps(nw) {
 			return ipamapi.ErrPoolOverlap
 		}
-		// This is a new master pool, add it along with corresponding bitmask
-		aSpace.subnets[nw] = newPoolData(nw)
-		return nil
-	}
-
-	// This is a new non-master pool (subPool)
-	if nw.Addr().BitLen() != sub.Addr().BitLen() {
-		return fmt.Errorf("pool and subpool are of incompatible address families")
+		return aSpace.allocatePool(nw)
 	}
 
 	// Look for parent pool
-	pp, ok := aSpace.subnets[nw]
+	_, ok := aSpace.subnets[nw]
 	if !ok {
-		// Parent pool does not exist, add it along with corresponding bitmask
-		pp = newPoolData(nw)
-		pp.autoRelease = true
-		aSpace.subnets[nw] = pp
+		if err := aSpace.allocatePool(nw); err != nil {
+			return err
+		}
+		aSpace.subnets[nw].autoRelease = true
 	}
-	pp.children[sub] = struct{}{}
+	aSpace.subnets[nw].children[sub] = struct{}{}
 	return nil
 }
 
 // overlaps reports whether nw contains any IP addresses in common with any of
 // the existing subnets in this address space.
 func (aSpace *addrSpace) overlaps(nw netip.Prefix) bool {
-	for pool := range aSpace.subnets {
-		if pool.Overlaps(nw) {
+	for _, allocated := range aSpace.allocated {
+		if allocated.Overlaps(nw) {
 			return true
 		}
 	}
 	return false
 }
 
-// getPredefineds returns the predefined subnets for the address space.
-//
-// It should not be called concurrently with any other method on the addrSpace.
-func (aSpace *addrSpace) getPredefineds() []netip.Prefix {
-	i := aSpace.predefinedStartIndex
-	// defensive in case the list changed since last update
-	if i >= len(aSpace.predefined) {
-		i = 0
+func (aSpace *addrSpace) allocatePool(nw netip.Prefix) error {
+	for i, allocated := range aSpace.allocated {
+		if nw.Addr().Compare(allocated.Addr()) < 0 {
+			aSpace.allocated = slices.Insert(aSpace.allocated, i, nw)
+			aSpace.subnets[nw] = newPoolData(nw)
+			return nil
+		}
 	}
-	return append(aSpace.predefined[i:], aSpace.predefined[:i]...)
+
+	aSpace.allocated = slices.Insert(aSpace.allocated, len(aSpace.allocated), nw)
+	aSpace.subnets[nw] = newPoolData(nw)
+	return nil
 }
 
-// updatePredefinedStartIndex rotates the predefined subnet list by amt.
-//
-// It should not be called concurrently with any other method on the addrSpace.
-func (aSpace *addrSpace) updatePredefinedStartIndex(amt int) {
-	i := aSpace.predefinedStartIndex + amt
-	if i < 0 || i >= len(aSpace.predefined) {
-		i = 0
-	}
-	aSpace.predefinedStartIndex = i
-}
-
-func (aSpace *addrSpace) allocatePredefinedPool(ipV6 bool) (netip.Prefix, error) {
+func (aSpace *addrSpace) allocatePredefinedPool(reserved []netip.Prefix) (netip.Prefix, error) {
 	aSpace.mu.Lock()
 	defer aSpace.mu.Unlock()
 
-	for i, nw := range aSpace.getPredefineds() {
-		if ipV6 != nw.Addr().Is6() {
-			continue
+	var pdfID int
+	var partialOverlap bool
+	var prevAlloc netip.Prefix
+
+	slices.SortFunc(reserved, netiputil.Compare)
+	dc := newDoubleCursor(aSpace.allocated, reserved, func(a, b netip.Prefix) bool {
+		return a.Addr().Less(b.Addr())
+	})
+
+	for {
+		allocated := dc.Get()
+		if allocated == (netip.Prefix{}) {
+			// We reached the end of both 'aSpace.allocated' and 'reserved'.
+			break
 		}
-		// Checks whether pool has already been allocated
-		if _, ok := aSpace.subnets[nw]; ok {
-			continue
+
+		if pdfID >= len(aSpace.predefined) {
+			return netip.Prefix{}, ipamapi.ErrNoMoreSubnets
 		}
-		// Shouldn't be necessary, but check prevents IP collisions should
-		// predefined pools overlap for any reason.
-		if !aSpace.overlaps(nw) {
-			aSpace.updatePredefinedStartIndex(i + 1)
-			err := aSpace.allocateSubnetL(nw, netip.Prefix{})
-			if err != nil {
-				return netip.Prefix{}, err
+		pdf := aSpace.predefined[pdfID]
+
+		if allocated.Overlaps(pdf.Base) {
+			dc.Inc()
+
+			if allocated.Bits() <= pdf.Base.Bits() {
+				// The current 'allocated' prefix is bigger than the 'pdf'
+				// network, thus the block is fully overlapped.
+				partialOverlap = false
+				prevAlloc = netip.Prefix{}
+				pdfID++
+				continue
 			}
-			return nw, nil
+
+			// If no previous 'allocated' was found to partially overlap 'pdf',
+			// we need to test whether there's enough space available at the
+			// beginning of 'pdf'.
+			if !partialOverlap && ipbits.Distance(pdf.FirstPrefix(), allocated, pdf.Size) >= 1 {
+				// Okay, so there's at least a whole subnet available between
+				// the start of 'pdf' and 'allocated'.
+				next := pdf.FirstPrefix()
+				aSpace.allocated = slices.Insert(aSpace.allocated, dc.ia, next)
+				aSpace.subnets[next] = newPoolData(next)
+				return next, nil
+			}
+
+			// If the network 'pdf' was already found to be partially
+			// overlapped, we need to test whether there's enough space between
+			// the end of 'prevAlloc' and current 'allocated'.
+			afterPrev := netiputil.PrefixAfter(prevAlloc, pdf.Size)
+			if partialOverlap && ipbits.Distance(afterPrev, allocated, pdf.Size) >= 1 {
+				// Okay, so there's at least a whole subnet available after
+				// 'prevAlloc' and before 'allocated'.
+				aSpace.allocated = slices.Insert(aSpace.allocated, dc.ia, afterPrev)
+				aSpace.subnets[afterPrev] = newPoolData(afterPrev)
+				return afterPrev, nil
+			}
+
+			if netiputil.LastAddr(allocated) == netiputil.LastAddr(pdf.Base) {
+				// The last address of the current 'allocated' prefix is the
+				// same as the last address of the 'pdf' network, it's fully
+				// overlapped.
+				partialOverlap = false
+				prevAlloc = netip.Prefix{}
+				pdfID++
+				continue
+			}
+
+			// This 'pdf' network is partially overlapped.
+			partialOverlap = true
+			prevAlloc = allocated
+			continue
 		}
+
+		// Okay, so previous 'allocated' overlapped and current doesn't. Now
+		// the question is: is there enough space left between previous
+		// 'allocated' and the end of the 'pdf' network?
+		if partialOverlap {
+			partialOverlap = false
+
+			if next := netiputil.PrefixAfter(prevAlloc, pdf.Size); pdf.Overlaps(next) {
+				aSpace.allocated = slices.Insert(aSpace.allocated, dc.ia, next)
+				aSpace.subnets[next] = newPoolData(next)
+				return next, nil
+			}
+
+			// No luck, PrefixAfter yielded an invalid prefix. There's not
+			// enough space left to subnet it once more.
+			pdfID++
+
+			// 'dc' is not incremented here, we need to re-test the current
+			// 'allocated' against the next 'pdf' network.
+			continue
+		}
+
+		// If the network 'pdf' doesn't overlap and is sorted before the
+		// current 'allocated', we found the right spot.
+		if pdf.Base.Addr().Less(allocated.Addr()) {
+			next := netip.PrefixFrom(pdf.Base.Addr(), pdf.Size)
+			aSpace.allocated = slices.Insert(aSpace.allocated, dc.ia, next)
+			aSpace.subnets[next] = newPoolData(next)
+			return aSpace.allocated[dc.ia], nil
+		}
+
+		dc.Inc()
+		prevAlloc = allocated
 	}
 
-	v := 4
-	if ipV6 {
-		v = 6
+	if pdfID >= len(aSpace.predefined) {
+		return netip.Prefix{}, ipamapi.ErrNoMoreSubnets
 	}
-	return netip.Prefix{}, types.NotFoundErrorf("could not find an available, non-overlapping IPv%d address pool among the defaults to assign to the network", v)
+
+	// We reached the end of 'allocated', but not the end of predefined
+	// networks. Let's try two more times (once on the current 'pdf', and once
+	// on the next network if any).
+	if partialOverlap {
+		pdf := aSpace.predefined[pdfID]
+
+		if next := netiputil.PrefixAfter(prevAlloc, pdf.Size); pdf.Overlaps(next) {
+			aSpace.allocated = slices.Insert(aSpace.allocated, dc.ia, next)
+			aSpace.subnets[next] = newPoolData(next)
+			return next, nil
+		}
+
+		// No luck -- PrefixAfter yielded an invalid prefix. There's not enough
+		// space left.
+		pdfID++
+	}
+
+	// One last chance. Here we don't increment pdfID since the last iteration
+	// on 'dc' found either:
+	//
+	// - A full overlap, and incremented 'pdfID'.
+	// - A partial overlap, and the previous 'if' incremented 'pdfID'.
+	// - The current 'pdfID' comes after the last 'allocated' -- it's not
+	//   overlapped at all.
+	//
+	// Hence, we're sure 'pdfID' has never been subnetted yet.
+	if pdfID < len(aSpace.predefined) {
+		pdf := aSpace.predefined[pdfID]
+
+		next := pdf.FirstPrefix()
+		aSpace.allocated = append(aSpace.allocated, next)
+		aSpace.subnets[next] = newPoolData(next)
+		return next, nil
+	}
+
+	return netip.Prefix{}, ipamapi.ErrNoMoreSubnets
 }
 
 func (aSpace *addrSpace) releaseSubnet(nw, sub netip.Prefix) error {
@@ -164,10 +311,21 @@ func (aSpace *addrSpace) releaseSubnet(nw, sub netip.Prefix) error {
 	}
 
 	if len(p.children) == 0 && p.autoRelease {
-		delete(aSpace.subnets, nw)
+		aSpace.deallocate(nw)
 	}
 
 	return nil
+}
+
+// deallocate removes 'nw' from the list of allocations.
+func (aSpace *addrSpace) deallocate(nw netip.Prefix) {
+	for i, allocated := range aSpace.allocated {
+		if allocated.Addr().Compare(nw.Addr()) == 0 && allocated.Bits() == nw.Bits() {
+			aSpace.allocated = slices.Delete(aSpace.allocated, i, i+1)
+			delete(aSpace.subnets, nw)
+			return
+		}
+	}
 }
 
 func (aSpace *addrSpace) requestAddress(nw, sub netip.Prefix, prefAddress netip.Addr, opts map[string]string) (netip.Addr, error) {

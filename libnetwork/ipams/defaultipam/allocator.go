@@ -29,20 +29,12 @@ const (
 func Register(ic ipamapi.Registerer, lAddrPools, gAddrPools []*ipamutils.NetworkToSplit) error {
 	localAddressPools := ipamutils.GetLocalScopeDefaultNetworks()
 	if len(lAddrPools) > 0 {
-		var err error
-		localAddressPools, err = ipamutils.SplitNetworks(lAddrPools)
-		if err != nil {
-			return err
-		}
+		localAddressPools = lAddrPools
 	}
 
 	globalAddressPools := ipamutils.GetGlobalScopeDefaultNetworks()
 	if len(gAddrPools) > 0 {
-		var err error
-		globalAddressPools, err = ipamutils.SplitNetworks(gAddrPools)
-		if err != nil {
-			return err
-		}
+		globalAddressPools = gAddrPools
 	}
 
 	a, err := NewAllocator(localAddressPools, globalAddressPools)
@@ -55,18 +47,18 @@ func Register(ic ipamapi.Registerer, lAddrPools, gAddrPools []*ipamutils.Network
 	return ic.RegisterIpamDriverWithCapabilities(DriverName, a, cps)
 }
 
-// Allocator provides per address space ipv4/ipv6 book keeping
+// Allocator provides per address space ipv4/ipv6 bookkeeping
 type Allocator struct {
 	// The address spaces
 	local4, local6, global4, global6 *addrSpace
 }
 
 // NewAllocator returns an instance of libnetwork ipam
-func NewAllocator(lcAs, glAs []*net.IPNet) (*Allocator, error) {
+func NewAllocator(lcAs, glAs []*ipamutils.NetworkToSplit) (*Allocator, error) {
 	var (
 		a                          Allocator
 		err                        error
-		lcAs4, lcAs6, glAs4, glAs6 []netip.Prefix
+		lcAs4, lcAs6, glAs4, glAs6 []*ipamutils.NetworkToSplit
 	)
 
 	lcAs4, lcAs6, err = splitByIPFamily(lcAs)
@@ -98,19 +90,18 @@ func NewAllocator(lcAs, glAs []*net.IPNet) (*Allocator, error) {
 	return &a, nil
 }
 
-func splitByIPFamily(s []*net.IPNet) ([]netip.Prefix, []netip.Prefix, error) {
-	var v4, v6 []netip.Prefix
+func splitByIPFamily(s []*ipamutils.NetworkToSplit) ([]*ipamutils.NetworkToSplit, []*ipamutils.NetworkToSplit, error) {
+	var v4, v6 []*ipamutils.NetworkToSplit
 
 	for i, n := range s {
-		p, ok := netiputil.ToPrefix(n)
-		if !ok {
-			return []netip.Prefix{}, []netip.Prefix{}, fmt.Errorf("network at index %d (%v) is not in canonical form", i, n)
+		if !n.Base.IsValid() || n.Size == 0 {
+			return []*ipamutils.NetworkToSplit{}, []*ipamutils.NetworkToSplit{}, fmt.Errorf("network at index %d (%v) is not in canonical form", i, n)
 		}
 
-		if p.Addr().Is4() {
-			v4 = append(v4, p)
+		if n.Base.Addr().Is4() {
+			v4 = append(v4, n)
 		} else {
-			v6 = append(v6, p)
+			v6 = append(v6, n)
 		}
 	}
 
@@ -147,7 +138,7 @@ func (a *Allocator) RequestPool(req ipamapi.PoolRequest) (ipamapi.AllocatedPool,
 
 	k := PoolID{AddressSpace: req.AddressSpace}
 	if req.Pool == "" {
-		if k.Subnet, err = aSpace.allocatePredefinedPool(req.V6); err != nil {
+		if k.Subnet, err = aSpace.allocatePredefinedPool(req.Exclude); err != nil {
 			return ipamapi.AllocatedPool{}, err
 		}
 		return ipamapi.AllocatedPool{PoolID: k.String(), Pool: k.Subnet}, nil
@@ -161,6 +152,11 @@ func (a *Allocator) RequestPool(req ipamapi.PoolRequest) (ipamapi.AllocatedPool,
 		if k.ChildSubnet, err = netip.ParsePrefix(req.SubPool); err != nil {
 			return ipamapi.AllocatedPool{}, types.InternalErrorf("invalid pool request: %v", ipamapi.ErrInvalidSubPool)
 		}
+	}
+
+	// This is a new non-master pool (subPool)
+	if k.Subnet.IsValid() && k.ChildSubnet.IsValid() && k.Subnet.Addr().BitLen() != k.ChildSubnet.Addr().BitLen() {
+		return ipamapi.AllocatedPool{}, types.InvalidParameterErrorf("pool and subpool are of incompatible address families")
 	}
 
 	k.Subnet, k.ChildSubnet = k.Subnet.Masked(), k.ChildSubnet.Masked()
@@ -227,7 +223,7 @@ func newPoolData(pool netip.Prefix) *PoolData {
 	h := bitmap.New(numAddresses)
 
 	// Pre-reserve the network address on IPv4 networks large
-	// enough to have one (i.e., anything bigger than a /31.
+	// enough to have one (i.e., anything bigger than a /31).
 	if !(pool.Addr().Is4() && numAddresses <= 2) {
 		h.Set(0)
 	}
