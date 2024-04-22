@@ -273,7 +273,7 @@ func (n *Namespace) AddInterface(ctx context.Context, srcName, dstPrefix string,
 	}
 
 	// Set the routes on the interface. This can only be done when the interface is up.
-	if err := setInterfaceRoutes(nlh, iface, i); err != nil {
+	if err := setInterfaceRoutes(ctx, nlh, iface, i); err != nil {
 		return fmt.Errorf("error setting interface %q routes to %q: %v", iface.Attrs().Name, i.Routes(), err)
 	}
 
@@ -343,7 +343,7 @@ func configureInterface(ctx context.Context, nlh *netlink.Handle, iface netlink.
 
 	ifaceName := iface.Attrs().Name
 	ifaceConfigurators := []struct {
-		Fn         func(*netlink.Handle, netlink.Link, *Interface) error
+		Fn         func(context.Context, *netlink.Handle, netlink.Link, *Interface) error
 		ErrMessage string
 	}{
 		{setInterfaceName, fmt.Sprintf("error renaming interface %q to %q", ifaceName, i.DstName())},
@@ -359,34 +359,51 @@ func configureInterface(ctx context.Context, nlh *netlink.Handle, iface netlink.
 	for _, config := range ifaceConfigurators {
 		config := config
 		eg.Go(func() error {
-			return config.Fn(nlh, iface, i)
+			return config.Fn(ctx, nlh, iface, i)
 		})
 	}
 
 	return eg.Wait()
 }
 
-func setInterfaceMaster(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceMaster(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
 	if i.DstMaster() == "" {
 		return nil
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceMaster", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
 
 	return nlh.LinkSetMaster(iface, &netlink.Bridge{
 		LinkAttrs: netlink.LinkAttrs{Name: i.DstMaster()},
 	})
 }
 
-func setInterfaceMAC(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceMAC(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
 	if i.MacAddress() == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceMAC", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
+
 	return nlh.LinkSetHardwareAddr(iface, i.MacAddress())
 }
 
-func setInterfaceIP(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceIP(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
 	if i.Address() == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceIP", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
+
 	if err := checkRouteConflict(nlh, i.Address(), netlink.FAMILY_V4); err != nil {
 		return err
 	}
@@ -394,10 +411,16 @@ func setInterfaceIP(nlh *netlink.Handle, iface netlink.Link, i *Interface) error
 	return nlh.AddrAdd(iface, ipAddr)
 }
 
-func setInterfaceIPv6(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceIPv6(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
 	if i.AddressIPv6() == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceIPv6", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
+
 	if err := checkRouteConflict(nlh, i.AddressIPv6(), netlink.FAMILY_V6); err != nil {
 		return err
 	}
@@ -408,7 +431,12 @@ func setInterfaceIPv6(nlh *netlink.Handle, iface netlink.Link, i *Interface) err
 	return nlh.AddrAdd(iface, ipAddr)
 }
 
-func setInterfaceLinkLocalIPs(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceLinkLocalIPs(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceLinkLocalIPs", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
+
 	for _, llIP := range i.LinkLocalAddresses() {
 		ipAddr := &netlink.Addr{IPNet: llIP}
 		if err := nlh.AddrAdd(iface, ipAddr); err != nil {
@@ -418,11 +446,20 @@ func setInterfaceLinkLocalIPs(nlh *netlink.Handle, iface netlink.Link, i *Interf
 	return nil
 }
 
-func setInterfaceName(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceName(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceName", trace.WithAttributes(
+		attribute.String("ifaceName", iface.Attrs().Name)))
+	defer span.End()
+
 	return nlh.LinkSetName(iface, i.DstName())
 }
 
-func setInterfaceRoutes(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func setInterfaceRoutes(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.setInterfaceRoutes", trace.WithAttributes(
+		attribute.String("i.SrcName", i.SrcName()),
+		attribute.String("i.DstName", i.DstName())))
+	defer span.End()
+
 	for _, route := range i.Routes() {
 		err := nlh.RouteAdd(&netlink.Route{
 			Scope:     netlink.SCOPE_LINK,

@@ -3,6 +3,8 @@
 package daemon // import "github.com/docker/docker/daemon"
 
 import (
+	"context"
+
 	"github.com/docker/docker/container"
 )
 

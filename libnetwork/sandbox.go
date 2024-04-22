@@ -259,7 +259,7 @@ func (sb *Sandbox) Refresh(ctx context.Context, options ...SandboxOption) error 
 	sb.processOptions(options...)
 
 	// Setup discovery files
-	if err := sb.setupResolutionFiles(); err != nil {
+	if err := sb.setupResolutionFiles(ctx); err != nil {
 		return err
 	}
 

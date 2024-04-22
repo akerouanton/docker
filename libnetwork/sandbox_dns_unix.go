@@ -80,7 +80,10 @@ func (sb *Sandbox) startResolver(restore bool) {
 	})
 }
 
-func (sb *Sandbox) setupResolutionFiles() error {
+func (sb *Sandbox) setupResolutionFiles(ctx context.Context) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.Sandbox.setupResolutionFiles")
+	defer span.End()
+
 	// Create a hosts file that can be mounted during container setup. For most
 	// networking modes (not host networking) it will be re-created before the
 	// container start, once its support for IPv6 is known.
