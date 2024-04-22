@@ -1082,7 +1082,7 @@ func (daemon *Daemon) ConnectToNetwork(ctx context.Context, container *container
 		}
 	}
 
-	return container.CheckpointTo(daemon.containersReplica)
+	return container.CheckpointTo(context.TODO(), daemon.containersReplica)
 }
 
 // DisconnectFromNetwork disconnects container from network n.
@@ -1116,7 +1116,7 @@ func (daemon *Daemon) DisconnectFromNetwork(ctx context.Context, container *cont
 		return err
 	}
 
-	if err := container.CheckpointTo(daemon.containersReplica); err != nil {
+	if err := container.CheckpointTo(context.TODO(), daemon.containersReplica); err != nil {
 		return err
 	}
 
