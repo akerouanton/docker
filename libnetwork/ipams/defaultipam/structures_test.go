@@ -3,6 +3,7 @@ package defaultipam
 import (
 	"net/netip"
 	"testing"
+	"time"
 
 	"gotest.tools/v3/assert"
 )
@@ -29,5 +30,55 @@ func TestDoubleCursor(t *testing.T) {
 	} {
 		assert.Equal(t, dc.Get(), exp)
 		dc.Inc()
+	}
+}
+
+func TestShufflerPickAll(t *testing.T) {
+	s := newShuffler(6, 1)
+
+	for _, want := range []uint64{2, 1, 4, 5, 3, 0} {
+		v, ok := s.pickRandom()
+		assert.Equal(t, v, want)
+		assert.Equal(t, ok, true)
+	}
+
+	_, ok := s.pickRandom()
+	assert.Equal(t, ok, false)
+}
+
+func TestShufflerGiveBack(t *testing.T) {
+	s := newShuffler(10, 3)
+	picked := make([]uint64, 0, 11)
+
+	for i := 1; i <= 6; i++ {
+		v, ok := s.pickRandom()
+		assert.Equal(t, ok, true)
+		picked = append(picked, v)
+	}
+	assert.DeepEqual(t, picked, []uint64{1, 4, 5, 0, 9, 3})
+
+	s.giveBack(9)
+
+	for i := 1; i <= 5; i++ {
+		v, ok := s.pickRandom()
+		assert.Equal(t, ok, true)
+		picked = append(picked, v)
+	}
+	assert.DeepEqual(t, picked, []uint64{1, 4, 5, 0, 9, 3, 2, 6, 9, 7, 8})
+
+	_, ok := s.pickRandom()
+	assert.Equal(t, ok, false)
+}
+
+func BenchmarkShuffler(b *testing.B) {
+	b.StopTimer()
+	s := newShuffler(10000, time.Now().UTC().UnixNano())
+
+	b.StartTimer()
+	for i := 0; i < 10000; i++ {
+		_, ok := s.pickRandom()
+		if !ok {
+			b.Fatal("pickRandom should not have reached the end yet")
+		}
 	}
 }

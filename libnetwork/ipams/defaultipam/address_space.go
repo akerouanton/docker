@@ -17,7 +17,7 @@ import (
 
 // addrSpace contains the pool configurations for the address space
 type addrSpace struct {
-	// Ordered list of allocated subnets. This field is used for subnet
+	// Ordered list of allocated subnets. This field is used for linear subnet
 	// allocations.
 	allocated []netip.Prefix
 	// Allocated subnets, indexed by their prefix. Values track address
@@ -26,6 +26,8 @@ type addrSpace struct {
 
 	// predefined pools for the address space
 	predefined []*ipamutils.NetworkToSplit
+	// Fisher-Yates shuffler used for random allocation of ULA subnets.
+	shuffler *shuffler
 
 	mu sync.Mutex
 }
