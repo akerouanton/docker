@@ -2,7 +2,11 @@
 
 package libnetwork
 
-import "github.com/docker/docker/libnetwork/osl"
+import (
+	"context"
+
+	"github.com/docker/docker/libnetwork/osl"
+)
 
 func releaseOSSboxResources(*osl.Namespace, *Endpoint) {}
 
@@ -26,7 +30,7 @@ func (sb *Sandbox) restoreOslSandbox() error {
 	return nil
 }
 
-func (sb *Sandbox) populateNetworkResources(*Endpoint) error {
+func (sb *Sandbox) populateNetworkResources(context.Context, *Endpoint) error {
 	// not implemented on Windows (Sandbox.osSbox is always nil)
 	return nil
 }
