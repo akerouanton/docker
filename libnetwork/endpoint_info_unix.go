@@ -11,18 +11,22 @@ func (ep *Endpoint) DriverInfo() (map[string]interface{}, error) {
 		return nil, err
 	}
 
+	n, err := ep.getNetworkFromStore()
+	if err != nil {
+		return nil, fmt.Errorf("could not find network in store for driver info: %v", err)
+	}
+
+	if !n.hasEndpointCapability() {
+		return nil, nil
+	}
+
 	if sb, ok := ep.getSandbox(); ok {
 		if gwep := sb.getEndpointInGWNetwork(); gwep != nil && gwep.ID() != ep.ID() {
 			return gwep.DriverInfo()
 		}
 	}
 
-	n, err := ep.getNetworkFromStore()
-	if err != nil {
-		return nil, fmt.Errorf("could not find network in store for driver info: %v", err)
-	}
-
-	driver, err := n.driver(true)
+	driver, err := ep.driver(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get driver info: %v", err)
 	}

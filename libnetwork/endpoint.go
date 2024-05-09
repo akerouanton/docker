@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork/datastore"
+	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/ipamapi"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/options"
@@ -496,11 +497,16 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		}
 	}()
 
+	if !n.hasEndpointCapability() {
+		sb.addEndpoint(ep)
+		return n.getController().updateToStore(ep)
+	}
+
 	nid := n.ID()
 
 	ep.processOptions(options...)
 
-	d, err := n.driver(true)
+	d, err := ep.driver(true)
 	if err != nil {
 		return fmt.Errorf("failed to get driver during join: %v", err)
 	}
@@ -716,7 +722,13 @@ func (ep *Endpoint) sbLeave(sb *Sandbox, force bool) error {
 		return types.ForbiddenErrorf("unexpected sandbox ID in leave request. Expected %s. Got %s", ep.sandboxID, sb.ID())
 	}
 
-	d, err := n.driver(!force)
+	if !n.hasEndpointCapability() {
+		ep.sandboxID = ""
+		ep.network = n
+		return n.getController().updateToStore(ep)
+	}
+
+	d, err := ep.driver(!force)
 	if err != nil {
 		return fmt.Errorf("failed to get driver during endpoint leave: %v", err)
 	}
@@ -876,7 +888,11 @@ func (ep *Endpoint) deleteEndpoint(force bool) error {
 	epid := ep.id
 	ep.mu.Unlock()
 
-	driver, err := n.driver(!force)
+	if !n.hasEndpointCapability() {
+		return nil
+	}
+
+	driver, err := ep.driver(!force)
 	if err != nil {
 		return fmt.Errorf("failed to delete endpoint: %v", err)
 	}
@@ -1061,9 +1077,6 @@ func (ep *Endpoint) assignAddress(ipam ipamapi.Ipam, assignIPv4, assignIPv6 bool
 	var err error
 
 	n := ep.getNetwork()
-	if n.hasSpecialDriver() {
-		return nil
-	}
 
 	log.G(context.TODO()).Debugf("Assigning addresses for endpoint %s's interface on network %s", ep.Name(), n.Name())
 
@@ -1215,4 +1228,16 @@ func (c *Controller) cleanupLocalEndpoints() error {
 	}
 
 	return nil
+}
+
+func (ep *Endpoint) driver(load bool) (driverapi.EndpointDriver, error) {
+	d, err := ep.network.driver(load)
+	if load && err != nil {
+		return nil, err
+	}
+	epDrv, ok := d.(driverapi.EndpointDriver)
+	if load && !ok {
+		return nil, fmt.Errorf("driver %s isn't an EndpointDriver", ep.network.Type())
+	}
+	return epDrv, nil
 }

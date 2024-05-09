@@ -142,6 +142,7 @@ func RegisterBuiltinLocalDrivers(r driverapi.Registerer, driverConfig func(strin
 		err = r.RegisterDriver(networkType, d, driverapi.Capability{
 			DataScope:         scope.Local,
 			ConnectivityScope: scope.Local,
+			EndpointDriver:    true,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to register %q driver: %w", networkType, err)
