@@ -54,6 +54,7 @@ func Register(r driverapi.Registerer, config map[string]interface{}) error {
 	return r.RegisterDriver(NetworkType, d, driverapi.Capability{
 		DataScope:         scope.Global,
 		ConnectivityScope: scope.Global,
+		EndpointDriver:    true,
 	})
 }
 
