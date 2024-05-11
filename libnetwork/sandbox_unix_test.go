@@ -72,7 +72,7 @@ func TestControllerGetSandbox(t *testing.T) {
 	})
 	t.Run("existing sandbox", func(t *testing.T) {
 		const cID = "test-container-id"
-		expected, err := ctrlr.NewSandbox(cID)
+		expected, err := ctrlr.NewSandbox(context.Background(), cID)
 		assert.Check(t, err)
 
 		sb, err := ctrlr.GetSandbox(cID)
@@ -94,7 +94,7 @@ func TestControllerGetSandbox(t *testing.T) {
 func TestSandboxAddEmpty(t *testing.T) {
 	ctrlr, _ := getTestEnv(t)
 
-	sbx, err := ctrlr.NewSandbox("sandbox0")
+	sbx, err := ctrlr.NewSandbox(context.Background(), "sandbox0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSandboxAddMultiPrio(t *testing.T) {
 
 	ctrlr, nws := getTestEnv(t, opts...)
 
-	sbx, err := ctrlr.NewSandbox("sandbox1")
+	sbx, err := ctrlr.NewSandbox(context.Background(), "sandbox1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestSandboxAddSamePrio(t *testing.T) {
 
 	ctrlr, nws := getTestEnv(t, opts...)
 
-	sbx, err := ctrlr.NewSandbox("sandbox1")
+	sbx, err := ctrlr.NewSandbox(context.Background(), "sandbox1")
 	if err != nil {
 		t.Fatal(err)
 	}

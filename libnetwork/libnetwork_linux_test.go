@@ -95,7 +95,7 @@ func TestNull(t *testing.T) {
 	defer netnsutils.SetupTestOSContext(t)()
 	controller := newController(t)
 
-	cnt, err := controller.NewSandbox("null_container",
+	cnt, err := controller.NewSandbox(context.Background(), "null_container",
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
@@ -876,7 +876,7 @@ func TestEndpointDeleteWithActiveContainer(t *testing.T) {
 		}
 	}()
 
-	cnt, err := controller.NewSandbox(containerID,
+	cnt, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
@@ -935,7 +935,7 @@ func TestEndpointMultipleJoins(t *testing.T) {
 		}
 	}()
 
-	sbx1, err := controller.NewSandbox(containerID,
+	sbx1, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"),
@@ -949,7 +949,7 @@ func TestEndpointMultipleJoins(t *testing.T) {
 		}
 	}()
 
-	sbx2, err := controller.NewSandbox("c2")
+	sbx2, err := controller.NewSandbox(context.Background(), "c2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1023,7 +1023,7 @@ func TestLeaveAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cnt, err := controller.NewSandbox("leaveall")
+	cnt, err := controller.NewSandbox(context.Background(), "leaveall")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1072,7 +1072,7 @@ func TestContainerInvalidLeave(t *testing.T) {
 		}
 	}()
 
-	cnt, err := controller.NewSandbox(containerID,
+	cnt, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
@@ -1137,7 +1137,7 @@ func TestEndpointUpdateParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sbx1, err := controller.NewSandbox(containerID,
+	sbx1, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
@@ -1150,7 +1150,7 @@ func TestEndpointUpdateParent(t *testing.T) {
 		}
 	}()
 
-	sbx2, err := controller.NewSandbox("c2",
+	sbx2, err := controller.NewSandbox(context.Background(), "c2",
 		libnetwork.OptionHostname("test2"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionHostsPath("/var/lib/docker/test_network/container2/hosts"),
@@ -1308,7 +1308,7 @@ func TestHost(t *testing.T) {
 	defer netnsutils.SetupTestOSContext(t)()
 	controller := newController(t)
 
-	sbx1, err := controller.NewSandbox("host_c1",
+	sbx1, err := controller.NewSandbox(context.Background(), "host_c1",
 		libnetwork.OptionHostname("test1"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"),
@@ -1322,7 +1322,7 @@ func TestHost(t *testing.T) {
 		}
 	}()
 
-	sbx2, err := controller.NewSandbox("host_c2",
+	sbx2, err := controller.NewSandbox(context.Background(), "host_c2",
 		libnetwork.OptionHostname("test2"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"),
@@ -1372,7 +1372,7 @@ func TestHost(t *testing.T) {
 	}
 
 	// Try to create another host endpoint and join/leave that.
-	cnt3, err := controller.NewSandbox("host_c3",
+	cnt3, err := controller.NewSandbox(context.Background(), "host_c3",
 		libnetwork.OptionHostname("test3"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"),
@@ -1555,7 +1555,7 @@ func TestEndpointJoin(t *testing.T) {
 		t.Fatalf("Unexpected error type returned: %T", err)
 	}
 
-	sb, err := controller.NewSandbox(containerID,
+	sb, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
@@ -1709,7 +1709,7 @@ func externalKeyTest(t *testing.T, reexec bool) {
 		}
 	}()
 
-	cnt, err := controller.NewSandbox(containerID,
+	cnt, err := controller.NewSandbox(context.Background(), containerID,
 		libnetwork.OptionHostname("test"),
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionUseExternalKey(),
@@ -1871,7 +1871,7 @@ func TestResolvConf(t *testing.T) {
 				libnetwork.OptionResolvConfPath(resolvConfPath),
 				libnetwork.OptionOriginResolvConfPath(originResolvConfPath),
 			)
-			sb, err := c.NewSandbox(containerID, sbOpts...)
+			sb, err := c.NewSandbox(context.Background(), containerID, sbOpts...)
 			assert.NilError(t, err)
 			defer func() {
 				err := sb.Delete()
@@ -2000,11 +2000,11 @@ func TestParallel(t *testing.T) {
 	}
 
 	sboxes := make([]*libnetwork.Sandbox, numThreads)
-	if sboxes[first-1], err = controller.NewSandbox(fmt.Sprintf("%drace", first), libnetwork.OptionUseDefaultSandbox()); err != nil {
+	if sboxes[first-1], err = controller.NewSandbox(context.Background(), fmt.Sprintf("%drace", first), libnetwork.OptionUseDefaultSandbox()); err != nil {
 		t.Fatal(err)
 	}
 	for thd := first + 1; thd <= last; thd++ {
-		if sboxes[thd-1], err = controller.NewSandbox(fmt.Sprintf("%drace", thd)); err != nil {
+		if sboxes[thd-1], err = controller.NewSandbox(context.Background(), fmt.Sprintf("%drace", thd)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -2057,7 +2057,7 @@ func TestBridge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sb, err := controller.NewSandbox(containerID, libnetwork.OptionPortMapping(getPortMapping()))
+	sb, err := controller.NewSandbox(context.Background(), containerID, libnetwork.OptionPortMapping(getPortMapping()))
 	if err != nil {
 		t.Fatal(err)
 	}
