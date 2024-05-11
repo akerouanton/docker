@@ -695,7 +695,7 @@ func testQueryEndpointInfo(t *testing.T, ulPxyEnabled bool) {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
 
-	err = d.ProgramExternalConnectivity("net1", "ep1", sbOptions)
+	err = d.ProgramExternalConnectivity(context.Background(), "net1", "ep1", sbOptions)
 	if err != nil {
 		t.Fatalf("Failed to program external connectivity: %v", err)
 	}
@@ -798,7 +798,7 @@ func TestLinkContainers(t *testing.T) {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
 
-	err = d.ProgramExternalConnectivity("net1", "ep1", sbOptions)
+	err = d.ProgramExternalConnectivity(context.Background(), "net1", "ep1", sbOptions)
 	if err != nil {
 		t.Fatalf("Failed to program external connectivity: %v", err)
 	}
@@ -829,7 +829,7 @@ func TestLinkContainers(t *testing.T) {
 		t.Fatal("Failed to link ep1 and ep2")
 	}
 
-	err = d.ProgramExternalConnectivity("net1", "ep2", sbOptions)
+	err = d.ProgramExternalConnectivity(context.Background(), "net1", "ep2", sbOptions)
 	if err != nil {
 		t.Fatalf("Failed to program external connectivity: %v", err)
 	}
@@ -886,7 +886,7 @@ func TestLinkContainers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = d.ProgramExternalConnectivity("net1", "ep2", sbOptions)
+	err = d.ProgramExternalConnectivity(context.Background(), "net1", "ep2", sbOptions)
 	if err != nil {
 		out, _ = iptable.Raw("-L", DockerChain)
 		for _, pm := range exposedPorts {
