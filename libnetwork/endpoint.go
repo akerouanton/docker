@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/libnetwork/options"
 	"github.com/docker/docker/libnetwork/scope"
 	"github.com/docker/docker/libnetwork/types"
+	"go.opentelemetry.io/otel"
 )
 
 // ByNetworkType sorts a [Endpoint] slice based on the network-type
@@ -469,7 +470,7 @@ func (ep *Endpoint) getNetworkFromStore() (*Network, error) {
 
 // Join joins the sandbox to the endpoint and populates into the sandbox
 // the network resources allocated for the endpoint.
-func (ep *Endpoint) Join(sb *Sandbox, options ...EndpointOption) error {
+func (ep *Endpoint) Join(ctx context.Context, sb *Sandbox, options ...EndpointOption) error {
 	if sb == nil || sb.ID() == "" || sb.Key() == "" {
 		return types.InvalidParameterErrorf("invalid Sandbox passed to endpoint join: %v", sb)
 	}
@@ -477,10 +478,13 @@ func (ep *Endpoint) Join(sb *Sandbox, options ...EndpointOption) error {
 	sb.joinLeaveStart()
 	defer sb.joinLeaveEnd()
 
-	return ep.sbJoin(sb, options...)
+	return ep.sbJoin(ctx, sb, options...)
 }
 
-func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
+func (ep *Endpoint) sbJoin(ctx context.Context, sb *Sandbox, options ...EndpointOption) (err error) {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.sbJoin")
+	defer span.End()
+
 	n, err := ep.getNetworkFromStore()
 	if err != nil {
 		return fmt.Errorf("failed to get network from store during join: %v", err)
@@ -518,7 +522,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		return fmt.Errorf("failed to get driver during join: %v", err)
 	}
 
-	err = d.Join(nid, epid, sb.Key(), ep, sb.Labels())
+	err = d.Join(ctx, nid, epid, sb.Key(), ep, sb.Labels())
 	if err != nil {
 		return err
 	}
@@ -532,14 +536,14 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 
 	if !n.getController().isAgent() {
 		if !n.getController().isSwarmNode() || n.Scope() != scope.Swarm || !n.driverIsMultihost() {
-			n.updateSvcRecord(ep, true)
+			n.updateSvcRecord(ctx, ep, true)
 		}
 	}
 
-	if err := sb.updateHostsFile(ep.getEtcHostsAddrs()); err != nil {
+	if err := sb.updateHostsFile(ctx, ep.getEtcHostsAddrs()); err != nil {
 		return err
 	}
-	if err = sb.updateDNS(n.enableIPv6); err != nil {
+	if err = sb.updateDNS(ctx, n.enableIPv6); err != nil {
 		return err
 	}
 
@@ -553,7 +557,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 		}
 	}()
 
-	if err = sb.populateNetworkResources(ep); err != nil {
+	if err = sb.populateNetworkResources(ctx, ep); err != nil {
 		return err
 	}
 
@@ -572,7 +576,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 	defer func() {
 		if err != nil {
 			if e := ep.deleteDriverInfoFromCluster(); e != nil {
-				log.G(context.TODO()).Errorf("Could not delete endpoint state for endpoint %s from cluster on join failure: %v", ep.Name(), e)
+				log.G(ctx).Errorf("Could not delete endpoint state for endpoint %s from cluster on join failure: %v", ep.Name(), e)
 			}
 		}
 	}()
@@ -631,7 +635,7 @@ func (ep *Endpoint) sbJoin(sb *Sandbox, options ...EndpointOption) (err error) {
 
 	if !sb.needDefaultGW() {
 		if e := sb.clearDefaultGW(); e != nil {
-			log.G(context.TODO()).Warnf("Failure while disconnecting sandbox %s (%s) from gateway network: %v",
+			log.G(ctx).Warnf("Failure while disconnecting sandbox %s (%s) from gateway network: %v",
 				sb.ID(), sb.ContainerID(), e)
 		}
 	}
@@ -656,6 +660,8 @@ func (ep *Endpoint) UpdateDNSNames(dnsNames []string) error {
 	nw := ep.getNetwork()
 	c := nw.getController()
 	sb, ok := ep.getSandbox()
+	ctx := context.TODO()
+
 	if !ok {
 		log.G(context.TODO()).WithFields(log.Fields{
 			"sandboxID":  ep.sandboxID,
@@ -674,10 +680,10 @@ func (ep *Endpoint) UpdateDNSNames(dnsNames []string) error {
 			return types.InternalErrorf("could not add service state for endpoint %s to cluster on UpdateDNSNames: %v", ep.Name(), err)
 		}
 	} else {
-		nw.updateSvcRecord(ep, false)
+		nw.updateSvcRecord(ctx, ep, false)
 
 		ep.dnsNames = dnsNames
-		nw.updateSvcRecord(ep, true)
+		nw.updateSvcRecord(ctx, ep, true)
 	}
 
 	// Update the store with the updated name
@@ -866,7 +872,7 @@ func (ep *Endpoint) Delete(force bool) error {
 	}()
 
 	if !n.getController().isSwarmNode() || n.Scope() != scope.Swarm || !n.driverIsMultihost() {
-		n.updateSvcRecord(ep, false)
+		n.updateSvcRecord(context.TODO(), ep, false)
 	}
 
 	if err = ep.deleteEndpoint(force); err != nil && !force {

@@ -690,7 +690,7 @@ func testQueryEndpointInfo(t *testing.T, ulPxyEnabled bool) {
 		t.Fatalf("Failed to create an endpoint : %s", err.Error())
 	}
 
-	err = d.Join("net1", "ep1", "sbox", te, sbOptions)
+	err = d.Join(context.Background(), "net1", "ep1", "sbox", te, sbOptions)
 	if err != nil {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
@@ -793,7 +793,7 @@ func TestLinkContainers(t *testing.T) {
 	sbOptions := make(map[string]interface{})
 	sbOptions[netlabel.ExposedPorts] = exposedPorts
 
-	err = d.Join("net1", "ep1", "sbox", te1, sbOptions)
+	err = d.Join(context.Background(), "net1", "ep1", "sbox", te1, sbOptions)
 	if err != nil {
 		t.Fatalf("Failed to join the endpoint: %v", err)
 	}
@@ -824,7 +824,7 @@ func TestLinkContainers(t *testing.T) {
 		"ChildEndpoints": []string{"ep1"},
 	}
 
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
+	err = d.Join(context.Background(), "net1", "ep2", "", te2, sbOptions)
 	if err != nil {
 		t.Fatal("Failed to link ep1 and ep2")
 	}
@@ -882,7 +882,7 @@ func TestLinkContainers(t *testing.T) {
 		"ChildEndpoints": []string{"ep1", "ep4"},
 	}
 
-	err = d.Join("net1", "ep2", "", te2, sbOptions)
+	err = d.Join(context.Background(), "net1", "ep2", "", te2, sbOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1097,7 +1097,7 @@ func TestSetDefaultGw(t *testing.T) {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 
-	err = d.Join("dummy", "ep", "sbox", te, nil)
+	err = d.Join(context.Background(), "dummy", "ep", "sbox", te, nil)
 	if err != nil {
 		t.Fatalf("Failed to join endpoint: %v", err)
 	}

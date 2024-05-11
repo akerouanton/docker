@@ -796,7 +796,7 @@ func (daemon *Daemon) connectToNetwork(ctx context.Context, cfg *config.Config, 
 		return err
 	}
 
-	if err := ep.Join(sb, joinOptions...); err != nil {
+	if err := ep.Join(ctx, sb, joinOptions...); err != nil {
 		return err
 	}
 

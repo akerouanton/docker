@@ -16,6 +16,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // newInterface creates a new interface in the given namespace using the
@@ -159,12 +162,33 @@ func (n *Namespace) findDst(srcName string, isBridge bool) string {
 	return ""
 }
 
+func moveLink(ctx context.Context, nlhHost *netlink.Handle, iface netlink.Link, i *Interface, path string) error {
+	_, span := otel.Tracer("").Start(ctx, "libnetwork.osl.moveLink", trace.WithAttributes(
+		attribute.String("ifaceName", i.DstName())))
+	defer span.End()
+
+	newNs, err := netns.GetFromPath(path)
+	if err != nil {
+		return fmt.Errorf("failed get network namespace %q: %v", path, err)
+	}
+	defer newNs.Close()
+	if err := nlhHost.LinkSetNsFd(iface, int(newNs)); err != nil {
+		return fmt.Errorf("failed to set namespace on link %q: %v", i.srcName, err)
+	}
+	return nil
+}
+
 // AddInterface adds an existing Interface to the sandbox. The operation will rename
 // from the Interface SrcName to DstName as it moves, and reconfigure the
 // interface according to the specified settings. The caller is expected
 // to only provide a prefix for DstName. The AddInterface api will auto-generate
 // an appropriate suffix for the DstName to disambiguate.
-func (n *Namespace) AddInterface(srcName, dstPrefix string, options ...IfaceOption) error {
+func (n *Namespace) AddInterface(ctx context.Context, srcName, dstPrefix string, options ...IfaceOption) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.AddInterface", trace.WithAttributes(
+		attribute.String("srcName", srcName),
+		attribute.String("dstPrefix", dstPrefix)))
+	defer span.End()
+
 	i, err := newInterface(n, srcName, dstPrefix, options...)
 	if err != nil {
 		return err
@@ -205,13 +229,8 @@ func (n *Namespace) AddInterface(srcName, dstPrefix string, options ...IfaceOpti
 		// namespace only if the namespace is not a default
 		// type
 		if !isDefault {
-			newNs, err := netns.GetFromPath(path)
-			if err != nil {
-				return fmt.Errorf("failed get network namespace %q: %v", path, err)
-			}
-			defer newNs.Close()
-			if err := nlhHost.LinkSetNsFd(iface, int(newNs)); err != nil {
-				return fmt.Errorf("failed to set namespace on link %q: %v", i.srcName, err)
+			if err := moveLink(ctx, nlhHost, iface, i, path); err != nil {
+				return err
 			}
 		}
 	}
@@ -228,7 +247,7 @@ func (n *Namespace) AddInterface(srcName, dstPrefix string, options ...IfaceOpti
 	}
 
 	// Configure the interface now this is moved in the proper namespace.
-	if err := n.configureInterface(nlh, iface, i); err != nil {
+	if err := n.configureInterface(ctx, nlh, iface, i); err != nil {
 		// If configuring the device fails move it back to the host namespace
 		// and change the name back to the source name. This allows the caller
 		// to properly cleanup the interface. Its important especially for
@@ -245,6 +264,10 @@ func (n *Namespace) AddInterface(srcName, dstPrefix string, options ...IfaceOpti
 	// Up the interface.
 	cnt := 0
 	for err = nlh.LinkSetUp(iface); err != nil && cnt < 3; cnt++ {
+		_, span2 := otel.Tracer("").Start(ctx, "libnetwork.osl.retryingLinkUp", trace.WithAttributes(
+			attribute.String("srcName", srcName),
+			attribute.String("dstPrefix", dstPrefix)))
+		defer span2.End()
 		log.G(context.TODO()).Debugf("retrying link setup because of: %v", err)
 		time.Sleep(10 * time.Millisecond)
 		err = nlh.LinkSetUp(iface)
@@ -317,7 +340,11 @@ func (n *Namespace) RemoveInterface(i *Interface) error {
 	return nil
 }
 
-func (n *Namespace) configureInterface(nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+func (n *Namespace) configureInterface(ctx context.Context, nlh *netlink.Handle, iface netlink.Link, i *Interface) error {
+	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.osl.configureInterface", trace.WithAttributes(
+		attribute.String("ifaceName", iface.Attrs().Name)))
+	defer span.End()
+
 	ifaceName := iface.Attrs().Name
 	ifaceConfigurators := []struct {
 		Fn         func(*netlink.Handle, netlink.Link, *Interface) error
