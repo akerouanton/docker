@@ -82,7 +82,7 @@ func TestControllerGetSandbox(t *testing.T) {
 		assert.Check(t, is.Equal(sb.Key(), expected.Key()))
 		assert.Check(t, is.Equal(sb.ContainerID(), expected.ContainerID()))
 
-		err = sb.Delete()
+		err = sb.Delete(context.Background())
 		assert.Check(t, err)
 
 		sb, err = ctrlr.GetSandbox(cID)
@@ -99,7 +99,7 @@ func TestSandboxAddEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := sbx.Delete(); err != nil {
+	if err := sbx.Delete(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ func TestSandboxAddMultiPrio(t *testing.T) {
 		t.Fatal("Expected ep3 to be at the top of the heap after adding ep3 back. But did not find ep3 at the top of the heap")
 	}
 
-	if err := sbx.Delete(); err != nil {
+	if err := sbx.Delete(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,7 +276,7 @@ func TestSandboxAddSamePrio(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := sbx.Delete(); err != nil {
+	if err := sbx.Delete(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 

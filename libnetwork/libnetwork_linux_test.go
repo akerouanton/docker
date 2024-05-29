@@ -127,7 +127,7 @@ func TestNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cnt.Delete(); err != nil {
+	if err := cnt.Delete(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -881,7 +881,7 @@ func TestEndpointDeleteWithActiveContainer(t *testing.T) {
 		libnetwork.OptionDomainname("example.com"),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
 	defer func() {
-		if err := cnt.Delete(); err != nil {
+		if err := cnt.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -944,7 +944,7 @@ func TestEndpointMultipleJoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx1.Delete(); err != nil {
+		if err := sbx1.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -954,7 +954,7 @@ func TestEndpointMultipleJoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx2.Delete(); err != nil {
+		if err := sbx2.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1038,7 +1038,7 @@ func TestLeaveAll(t *testing.T) {
 		t.Fatalf("Failed to join ep2: %v", err)
 	}
 
-	err = cnt.Delete()
+	err = cnt.Delete(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1080,7 +1080,7 @@ func TestContainerInvalidLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := cnt.Delete(); err != nil {
+		if err := cnt.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1145,7 +1145,7 @@ func TestEndpointUpdateParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx1.Delete(); err != nil {
+		if err := sbx1.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1159,7 +1159,7 @@ func TestEndpointUpdateParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx2.Delete(); err != nil {
+		if err := sbx2.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1317,7 +1317,7 @@ func TestHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx1.Delete(); err != nil {
+		if err := sbx1.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1331,7 +1331,7 @@ func TestHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sbx2.Delete(); err != nil {
+		if err := sbx2.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1381,7 +1381,7 @@ func TestHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := cnt3.Delete(); err != nil {
+		if err := cnt3.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1564,7 +1564,7 @@ func TestEndpointJoin(t *testing.T) {
 	}
 
 	defer func() {
-		if err := sb.Delete(); err != nil {
+		if err := sb.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1715,7 +1715,7 @@ func externalKeyTest(t *testing.T, reexec bool) {
 		libnetwork.OptionUseExternalKey(),
 		libnetwork.OptionExtraHost("web", "192.168.0.1"))
 	defer func() {
-		if err := cnt.Delete(); err != nil {
+		if err := cnt.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 		osl.GC()
@@ -1874,7 +1874,7 @@ func TestResolvConf(t *testing.T) {
 			sb, err := c.NewSandbox(context.Background(), containerID, sbOpts...)
 			assert.NilError(t, err)
 			defer func() {
-				err := sb.Delete()
+				err := sb.Delete(context.Background())
 				assert.Check(t, err)
 			}()
 
@@ -1952,7 +1952,7 @@ func (pt parallelTester) Do(t *testing.T, thrNumber int) error {
 		}
 	}
 
-	if err := errors.WithStack(sb.Delete()); err != nil {
+	if err := errors.WithStack(sb.Delete(context.Background())); err != nil {
 		return err
 	}
 	return errors.WithStack(ep.Delete(context.Background(), false))
@@ -2062,7 +2062,7 @@ func TestBridge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := sb.Delete(); err != nil {
+		if err := sb.Delete(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()

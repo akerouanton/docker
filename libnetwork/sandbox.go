@@ -131,11 +131,11 @@ func (sb *Sandbox) Labels() map[string]interface{} {
 }
 
 // Delete destroys this container after detaching it from all connected endpoints.
-func (sb *Sandbox) Delete() error {
-	return sb.delete(false)
+func (sb *Sandbox) Delete(ctx context.Context) error {
+	return sb.delete(ctx, false)
 }
 
-func (sb *Sandbox) delete(force bool) error {
+func (sb *Sandbox) delete(ctx context.Context, force bool) error {
 	sb.mu.Lock()
 	if sb.inDelete {
 		sb.mu.Unlock()
