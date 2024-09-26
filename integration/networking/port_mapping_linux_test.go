@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/docker/docker/integration/internal/network"
 	"github.com/docker/docker/internal/testutils/networking"
 	"github.com/docker/docker/libnetwork/drivers/bridge"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/docker/testutil"
 	"github.com/docker/docker/testutil/daemon"
 	"github.com/docker/go-connections/nat"
@@ -305,6 +307,81 @@ func TestAccessPublishedPortFromHost(t *testing.T) {
 	}
 }
 
+func TestAccessUnpublishedPortFromHost(t *testing.T) {
+	ctx := setupTest(t)
+
+	assert.NilError(t, exec.Command("sysctl", "net.ipv6.conf.all.disable_ipv6=0").Run())
+	out, err := exec.Command("ip", "addr", "add", "fdde:95d0:f8a4::2/64", "dev", "eth0").CombinedOutput()
+	if err != nil && !strings.Contains(string(out), "address already assigned") {
+		assert.NilError(t, err, string(out))
+	}
+
+	testcases := []struct {
+		gwMode     string
+		ulpEnabled bool
+	}{
+		{
+			gwMode:     "nat",
+			ulpEnabled: true,
+		},
+		{
+			gwMode:     "nat",
+			ulpEnabled: false,
+		},
+		{
+			gwMode: "routed",
+		},
+	}
+
+	for tcID, tc := range testcases {
+		t.Run(fmt.Sprintf("GwMode=%s/userland-proxy=%t", tc.gwMode, tc.ulpEnabled), func(t *testing.T) {
+			ctx := testutil.StartSpan(ctx, t)
+
+			d := daemon.New(t)
+			d.StartWithBusybox(ctx, t, fmt.Sprintf("--userland-proxy=%t", tc.ulpEnabled))
+			defer d.Stop(t)
+
+			c := d.NewClientT(t)
+			defer c.Close()
+
+			bridgeName := fmt.Sprintf("unpublished-%d", tcID)
+			network.CreateNoError(ctx, t, c, bridgeName,
+				network.WithDriver("bridge"),
+				network.WithOption(bridge.BridgeName, bridgeName),
+				network.WithOption(bridge.IPv4GatewayMode, tc.gwMode),
+				network.WithOption(bridge.IPv6GatewayMode, tc.gwMode),
+				network.WithIPv6(),
+				network.WithIPAM("192.168.150.0/24", "192.168.150.1"),
+				network.WithIPAM("fd38:52d2:26a8::/64", "fd38:52d2:26a8::1"))
+			defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+			serverID := container.Run(ctx, t, c,
+				container.WithName(sanitizeCtrName(t.Name()+"-server")),
+				container.WithCmd("httpd", "-f"),
+				container.WithNetworkMode(bridgeName))
+			defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+			t.Run("IPv4", func(t *testing.T) {
+				testutil.StartSpan(ctx, t)
+
+				httpClient := &http.Client{Timeout: 3 * time.Second}
+				resp, err := httpClient.Get("http://" + net.JoinHostPort("192.168.150.2", "80"))
+				assert.NilError(t, err)
+				assert.Check(t, is.Equal(resp.StatusCode, 404))
+			})
+
+			t.Run("IPv6", func(t *testing.T) {
+				testutil.StartSpan(ctx, t)
+
+				httpClient := &http.Client{Timeout: 3 * time.Second}
+				resp, err := httpClient.Get("http://" + net.JoinHostPort("fd38:52d2:26a8::2", "80"))
+				assert.NilError(t, err)
+				assert.Check(t, is.Equal(resp.StatusCode, 404))
+			})
+		})
+	}
+}
+
 func TestAccessPublishedPortFromRemoteHost(t *testing.T) {
 	ctx := setupTest(t)
 
@@ -362,4 +439,238 @@ func TestAccessPublishedPortFromRemoteHost(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestNoDirectAccessInNATMode verifies if a container connected to a network
+// with gateway_mode=nat and ports published on the host is really unreachable.
+func TestNoDirectAccessInNATMode(t *testing.T) {
+	t.Skip("See moby/moby#45610")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-no-direct-routing-br",
+		netip.MustParsePrefix("192.168.121.1/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::1/64"))
+	defer l3.Destroy(t)
+
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.121.2/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::2/64"))
+	l3.AddHost(t, "attacker", "test-no-direct-routing-attacker", "eth0",
+		netip.MustParsePrefix("192.168.121.3/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::3/64"))
+
+	// Set up a route on the attacker host to reach the docker bridge network
+	// created below, via the docker host.
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "172.23.12.0/24", "via", "192.168.121.2")
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "fd0a:0dbf:c73f::/64", "via", "fdfa:7f06:b7e7::2")
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	bridgeIPv4 := "172.23.12.1"
+	bridgeIPv6 := "fd0a:0dbf:c73f::1"
+	bridgeName := fmt.Sprintf("nat-remote")
+	network.CreateNoError(ctx, t, c, bridgeName,
+		network.WithDriver("bridge"),
+		network.WithOption(bridge.BridgeName, bridgeName),
+		network.WithIPv6(),
+		network.WithIPAM("172.23.12.0/24", bridgeIPv4),
+		network.WithIPAM("fd0a:0dbf:c73f::/64", bridgeIPv6))
+	defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+	ctrIPv4 := "172.23.12.2"
+	ctrIPv6 := "fd0a:0dbf:c73f::2"
+	serverID := container.Run(ctx, t, c,
+		container.WithName(sanitizeCtrName(t.Name()+"-server")),
+		container.WithExposedPorts("80/tcp"),
+		container.WithPortMap(nat.PortMap{"80/tcp": {
+			{HostIP: "127.0.0.1", HostPort: "1781"},
+			{HostIP: "::1", HostPort: "1781"},
+		}}),
+		container.WithCmd("httpd", "-f"),
+		container.WithIPv4(bridgeName, ctrIPv4),
+		container.WithIPv6(bridgeName, ctrIPv6),
+		container.WithNetworkMode(bridgeName))
+	defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+	for _, ipv6 := range []bool{true, false} {
+		t.Run(fmt.Sprintf("IPv6=%t", ipv6), func(t *testing.T) {
+			testutil.StartSpan(ctx, t)
+
+			ctrIP := ctrIPv4
+			if ipv6 {
+				ctrIP = ctrIPv6
+			}
+
+			l3.Hosts["attacker"].Do(t, func() {
+				url := "http://" + net.JoinHostPort(ctrIP, "80")
+				t.Logf("Sending a request to %s", url)
+
+				// Send a request to the victim container from the attacker host.
+				assert.Check(t, icmd.RunCommand("curl", "-m", "5", url).ExitCode > 0)
+			})
+		})
+	}
+}
+
+func TestAccessingUnpublishedPortsFromRemoteHost(t *testing.T) {
+	t.Skip("See moby/moby#45610")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-unpublished-ports-br",
+		netip.MustParsePrefix("192.168.122.1/24"),
+		netip.MustParsePrefix("fd55:c946:3f6f::1/64"))
+	defer l3.Destroy(t)
+
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.122.2/24"),
+		netip.MustParsePrefix("fd55:c946:3f6f::2/64"))
+	l3.AddHost(t, "attacker", "test-unpublished-ports-attacker", "eth0",
+		netip.MustParsePrefix("192.168.122.3/24"),
+		netip.MustParsePrefix("fd55:c946:3f6f::3/64"))
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	testcases := []struct {
+		gwMode   string
+		subnetV4 netip.Prefix // Subnet for the docker bridge network
+		subnetV6 netip.Prefix // Subnet for the docker bridge network
+	}{
+		{
+			gwMode:   "nat",
+			subnetV4: netip.MustParsePrefix("172.23.12.0/24"),
+			subnetV6: netip.MustParsePrefix("fd0a:0dbf:c73f::/64"),
+		},
+		{
+			gwMode:   "routed",
+			subnetV4: netip.MustParsePrefix("172.23.13.0/24"),
+			subnetV6: netip.MustParsePrefix("fdc6:b1b6:98f9::/64"),
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(fmt.Sprintf("GwMode=%s", tc.gwMode), func(t *testing.T) {
+			ctx := testutil.StartSpan(ctx, t)
+
+			bridgeIPv4 := tc.subnetV4.Addr().Next()
+			bridgeIPv6 := tc.subnetV6.Addr().Next()
+			bridgeName := fmt.Sprintf("nat-remote")
+			network.CreateNoError(ctx, t, c, bridgeName,
+				network.WithDriver("bridge"),
+				network.WithOption(bridge.BridgeName, bridgeName),
+				network.WithOption(bridge.IPv4GatewayMode, tc.gwMode),
+				network.WithOption(bridge.IPv6GatewayMode, tc.gwMode),
+				network.WithIPv6(),
+				network.WithIPAM(tc.subnetV4.String(), bridgeIPv4.String()),
+				network.WithIPAM(tc.subnetV6.String(), bridgeIPv6.String()))
+			defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+			// Set up a route on the attacker host to reach the docker bridge network
+			// created below, via the docker host.
+			l3.Hosts["attacker"].Run(t, "ip", "route", "add", tc.subnetV4.String(), "via", "192.168.122.2")
+			l3.Hosts["attacker"].Run(t, "ip", "route", "add", tc.subnetV6.String(), "via", "fd55:c946:3f6f::2")
+
+			ctrIPv4 := bridgeIPv4.Next()
+			ctrIPv6 := bridgeIPv6.Next()
+			serverID := container.Run(ctx, t, c,
+				container.WithName(sanitizeCtrName(t.Name()+"-server")),
+				container.WithCmd("httpd", "-f"),
+				container.WithIPv4(bridgeName, ctrIPv4.String()),
+				container.WithIPv6(bridgeName, ctrIPv6.String()),
+				container.WithNetworkMode(bridgeName))
+			defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+			for _, ipv6 := range []bool{true, false} {
+				t.Run(fmt.Sprintf("IPv6=%t", ipv6), func(t *testing.T) {
+					testutil.StartSpan(ctx, t)
+
+					ctrIP := ctrIPv4
+					if ipv6 {
+						ctrIP = ctrIPv6
+					}
+
+					l3.Hosts["attacker"].Do(t, func() {
+						url := "http://" + net.JoinHostPort(ctrIP.String(), "80")
+						t.Logf("Sending a request to %s", url)
+
+						// Send a request to the victim container from the attacker host.
+						assert.Check(t, icmd.RunCommand("curl", "-m", "5", url).ExitCode > 0)
+					})
+				})
+			}
+		})
+	}
+}
+
+func TestAccessPortPublishedOnLo(t *testing.T) {
+	t.Skip("See moby/moby#45610")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-published-on-lo-br",
+		netip.MustParsePrefix("192.168.123.1/24"))
+	defer l3.Destroy(t)
+
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.123.2/24"))
+	l3.AddHost(t, "attacker", "test-published-on-lo-attacker", "eth0",
+		netip.MustParsePrefix("192.168.123.3/24"))
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	bridgeName := fmt.Sprintf("nat-remote")
+	network.CreateNoError(ctx, t, c, bridgeName,
+		network.WithDriver("bridge"),
+		network.WithOption(bridge.BridgeName, bridgeName))
+	defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+	// Set up a route on the attacker host to reach the docker bridge network
+	// created above, via the docker host.
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "127.10.0.0/16", "via", "192.168.123.2", "dev", "eth0")
+
+	serverID := container.Run(ctx, t, c,
+		container.WithName(sanitizeCtrName(t.Name()+"-server")),
+		container.WithCmd("nc", "-lup", "5000"),
+		container.WithExposedPorts("5000/udp"),
+		container.WithPortMap(nat.PortMap{"5000/udp": {{HostIP: "127.10.0.1", HostPort: "5000"}}}),
+		container.WithNetworkMode(bridgeName))
+	defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+	l3.Hosts["attacker"].Do(t, func() {
+		t.Log("Sending a datagram to 127.10.0.1:5000")
+
+		// Send a request to the victim container from the attacker host.
+		icmd.RunCommand("/bin/sh", "-c", "echo foobar | nc -w1 -u 127.10.0.1 6000").Assert(t, icmd.Success)
+	})
+
+	// Assert on outputs
+	logReader, err := c.ContainerLogs(ctx, serverID, containertypes.LogsOptions{ShowStdout: true})
+	assert.NilError(t, err)
+	defer logReader.Close()
+
+	var actualStdout bytes.Buffer
+	_, err = stdcopy.StdCopy(&actualStdout, nil, logReader)
+	assert.NilError(t, err)
+
+	stdOut := strings.TrimSpace(actualStdout.String())
+	assert.Assert(t, !strings.Contains(stdOut, "foobar"))
 }
