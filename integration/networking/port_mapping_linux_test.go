@@ -397,6 +397,81 @@ func TestAccessPublishedPortFromHost(t *testing.T) {
 	}
 }
 
+func TestAccessUnpublishedPortFromHost(t *testing.T) {
+	ctx := setupTest(t)
+
+	assert.NilError(t, exec.Command("sysctl", "net.ipv6.conf.all.disable_ipv6=0").Run())
+	out, err := exec.Command("ip", "addr", "add", "fdde:95d0:f8a4::2/64", "dev", "eth0").CombinedOutput()
+	if err != nil && !strings.Contains(string(out), "address already assigned") {
+		assert.NilError(t, err, string(out))
+	}
+
+	testcases := []struct {
+		gwMode     string
+		ulpEnabled bool
+	}{
+		{
+			gwMode:     "nat",
+			ulpEnabled: true,
+		},
+		{
+			gwMode:     "nat",
+			ulpEnabled: false,
+		},
+		{
+			gwMode: "routed",
+		},
+	}
+
+	for tcID, tc := range testcases {
+		t.Run(fmt.Sprintf("GwMode=%s/userland-proxy=%t", tc.gwMode, tc.ulpEnabled), func(t *testing.T) {
+			ctx := testutil.StartSpan(ctx, t)
+
+			d := daemon.New(t)
+			d.StartWithBusybox(ctx, t, fmt.Sprintf("--userland-proxy=%t", tc.ulpEnabled))
+			defer d.Stop(t)
+
+			c := d.NewClientT(t)
+			defer c.Close()
+
+			bridgeName := fmt.Sprintf("unpublished-%d", tcID)
+			network.CreateNoError(ctx, t, c, bridgeName,
+				network.WithDriver("bridge"),
+				network.WithOption(bridge.BridgeName, bridgeName),
+				network.WithOption(bridge.IPv4GatewayMode, tc.gwMode),
+				network.WithOption(bridge.IPv6GatewayMode, tc.gwMode),
+				network.WithIPv6(),
+				network.WithIPAM("192.168.150.0/24", "192.168.150.1"),
+				network.WithIPAM("fd38:52d2:26a8::/64", "fd38:52d2:26a8::1"))
+			defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+			serverID := container.Run(ctx, t, c,
+				container.WithName(sanitizeCtrName(t.Name()+"-server")),
+				container.WithCmd("httpd", "-f"),
+				container.WithNetworkMode(bridgeName))
+			defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+			t.Run("IPv4", func(t *testing.T) {
+				testutil.StartSpan(ctx, t)
+
+				httpClient := &http.Client{Timeout: 3 * time.Second}
+				resp, err := httpClient.Get("http://" + net.JoinHostPort("192.168.150.2", "80"))
+				assert.NilError(t, err)
+				assert.Check(t, is.Equal(resp.StatusCode, 404))
+			})
+
+			t.Run("IPv6", func(t *testing.T) {
+				testutil.StartSpan(ctx, t)
+
+				httpClient := &http.Client{Timeout: 3 * time.Second}
+				resp, err := httpClient.Get("http://" + net.JoinHostPort("fd38:52d2:26a8::2", "80"))
+				assert.NilError(t, err)
+				assert.Check(t, is.Equal(resp.StatusCode, 404))
+			})
+		})
+	}
+}
+
 func TestAccessPublishedPortFromRemoteHost(t *testing.T) {
 	// IPv6 test case is currently failing in rootless mode. This needs further investigation.
 	skip.If(t, testEnv.IsRootless)
