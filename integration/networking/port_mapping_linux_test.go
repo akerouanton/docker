@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"github.com/docker/docker/integration/internal/network"
 	"github.com/docker/docker/internal/testutils/networking"
 	"github.com/docker/docker/libnetwork/drivers/bridge"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/docker/testutil"
 	"github.com/docker/docker/testutil/daemon"
 	"github.com/docker/go-connections/nat"
@@ -995,4 +997,64 @@ func TestAccessingUnpublishedPortsFromRemoteHost(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAccessPortPublishedOnLo(t *testing.T) {
+	t.Skip("See moby/moby#45610")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-published-on-lo-br",
+		netip.MustParsePrefix("192.168.123.1/24"))
+	defer l3.Destroy(t)
+
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.123.2/24"))
+	l3.AddHost(t, "attacker", "test-published-on-lo-attacker", "eth0",
+		netip.MustParsePrefix("192.168.123.3/24"))
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	bridgeName := fmt.Sprintf("nat-remote")
+	network.CreateNoError(ctx, t, c, bridgeName,
+		network.WithDriver("bridge"),
+		network.WithOption(bridge.BridgeName, bridgeName))
+	defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+	// Set up a route on the attacker host to reach the docker bridge network
+	// created above, via the docker host.
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "127.10.0.0/16", "via", "192.168.123.2", "dev", "eth0")
+
+	serverID := container.Run(ctx, t, c,
+		container.WithName(sanitizeCtrName(t.Name()+"-server")),
+		container.WithCmd("nc", "-lup", "5000"),
+		container.WithExposedPorts("5000/udp"),
+		container.WithPortMap(nat.PortMap{"5000/udp": {{HostIP: "127.10.0.1", HostPort: "5000"}}}),
+		container.WithNetworkMode(bridgeName))
+	defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+	l3.Hosts["attacker"].Do(t, func() {
+		t.Log("Sending a datagram to 127.10.0.1:5000")
+
+		// Send a request to the victim container from the attacker host.
+		icmd.RunCommand("/bin/sh", "-c", "echo foobar | nc -w1 -u 127.10.0.1 6000").Assert(t, icmd.Success)
+	})
+
+	// Assert on outputs
+	logReader, err := c.ContainerLogs(ctx, serverID, containertypes.LogsOptions{ShowStdout: true})
+	assert.NilError(t, err)
+	defer logReader.Close()
+
+	var actualStdout bytes.Buffer
+	_, err = stdcopy.StdCopy(&actualStdout, nil, logReader)
+	assert.NilError(t, err)
+
+	stdOut := strings.TrimSpace(actualStdout.String())
+	assert.Assert(t, !strings.Contains(stdOut, "foobar"))
 }
