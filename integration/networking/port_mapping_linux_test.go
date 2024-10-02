@@ -822,3 +822,81 @@ func TestDirectRoutingOpenPorts(t *testing.T) {
 		})
 	}
 }
+
+// TestNoDirectAccessInNATMode verifies if a container connected to a network
+// with gateway_mode=nat and ports published on the host is really unreachable.
+func TestNoDirectAccessInNATMode(t *testing.T) {
+	t.Skip("See moby/moby#45610")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-no-direct-routing-br",
+		netip.MustParsePrefix("192.168.121.1/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::1/64"))
+	defer l3.Destroy(t)
+
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.121.2/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::2/64"))
+	l3.AddHost(t, "attacker", "test-no-direct-routing-attacker", "eth0",
+		netip.MustParsePrefix("192.168.121.3/24"),
+		netip.MustParsePrefix("fdfa:7f06:b7e7::3/64"))
+
+	// Set up a route on the attacker host to reach the docker bridge network
+	// created below, via the docker host.
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "172.23.12.0/24", "via", "192.168.121.2")
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", "fd0a:0dbf:c73f::/64", "via", "fdfa:7f06:b7e7::2")
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	bridgeIPv4 := "172.23.12.1"
+	bridgeIPv6 := "fd0a:0dbf:c73f::1"
+	bridgeName := fmt.Sprintf("nat-remote")
+	network.CreateNoError(ctx, t, c, bridgeName,
+		network.WithDriver("bridge"),
+		network.WithOption(bridge.BridgeName, bridgeName),
+		network.WithIPv6(),
+		network.WithIPAM("172.23.12.0/24", bridgeIPv4),
+		network.WithIPAM("fd0a:0dbf:c73f::/64", bridgeIPv6))
+	defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+	ctrIPv4 := "172.23.12.2"
+	ctrIPv6 := "fd0a:0dbf:c73f::2"
+	serverID := container.Run(ctx, t, c,
+		container.WithName(sanitizeCtrName(t.Name()+"-server")),
+		container.WithExposedPorts("80/tcp"),
+		container.WithPortMap(nat.PortMap{"80/tcp": {
+			{HostIP: "127.0.0.1", HostPort: "1781"},
+			{HostIP: "::1", HostPort: "1781"},
+		}}),
+		container.WithCmd("httpd", "-f"),
+		container.WithIPv4(bridgeName, ctrIPv4),
+		container.WithIPv6(bridgeName, ctrIPv6),
+		container.WithNetworkMode(bridgeName))
+	defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+	for _, ipv6 := range []bool{true, false} {
+		t.Run(fmt.Sprintf("IPv6=%t", ipv6), func(t *testing.T) {
+			testutil.StartSpan(ctx, t)
+
+			ctrIP := ctrIPv4
+			if ipv6 {
+				ctrIP = ctrIPv6
+			}
+
+			l3.Hosts["attacker"].Do(t, func() {
+				url := "http://" + net.JoinHostPort(ctrIP, "80")
+				t.Logf("Sending a request to %s", url)
+
+				// Send a request to the victim container from the attacker host.
+				assert.Check(t, icmd.RunCommand("curl", "-m", "5", url).ExitCode > 0)
+			})
+		})
+	}
+}
