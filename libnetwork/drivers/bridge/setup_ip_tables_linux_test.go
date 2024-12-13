@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/internal/nlwrap"
 	"github.com/docker/docker/internal/testutils/netnsutils"
 	"github.com/docker/docker/libnetwork/driverapi"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/fwipt"
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/vishvananda/netlink"
@@ -94,19 +95,19 @@ func TestSetupIPChains(t *testing.T) {
 	// The purpose of this test is unclear but, now there's an ipset of bridges, it's
 	// an error to create a bridge that's already been created. That can't happen in
 	// normal running. So, just flush the set between each step.
-	assert.NilError(t, netlink.IpsetFlush(ipsetExtBridges4))
+	assert.NilError(t, netlink.IpsetFlush(fwipt.IpsetExtBridges4))
 
 	config.EnableIPMasquerade = true
 	assertBridgeConfig(config, br, d, t)
-	assert.NilError(t, netlink.IpsetFlush(ipsetExtBridges4))
+	assert.NilError(t, netlink.IpsetFlush(fwipt.IpsetExtBridges4))
 
 	config.EnableICC = true
 	assertBridgeConfig(config, br, d, t)
-	assert.NilError(t, netlink.IpsetFlush(ipsetExtBridges4))
+	assert.NilError(t, netlink.IpsetFlush(fwipt.IpsetExtBridges4))
 
 	config.EnableIPMasquerade = false
 	assertBridgeConfig(config, br, d, t)
-	assert.NilError(t, netlink.IpsetFlush(ipsetExtBridges4))
+	assert.NilError(t, netlink.IpsetFlush(fwipt.IpsetExtBridges4))
 }
 
 func getBasicTestConfig() *networkConfiguration {
@@ -156,13 +157,13 @@ func assertIPTableChainProgramming(rule iptRule, descr string, t *testing.T) {
 func assertChainConfig(d *driver, t *testing.T) {
 	var err error
 
-	err = setupHashNetIpset(ipsetExtBridges4, unix.AF_INET)
+	err = setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET)
 	assert.NilError(t, err)
 	d.natChain, d.filterChain, d.isolationChain1, d.isolationChain2, err = setupIPChains(d.config, iptables.IPv4)
 	assert.NilError(t, err)
 
 	if d.config.EnableIP6Tables {
-		err = setupHashNetIpset(ipsetExtBridges6, unix.AF_INET6)
+		err = setupHashNetIpset(fwipt.IpsetExtBridges6, unix.AF_INET6)
 		assert.NilError(t, err)
 		d.natChainV6, d.filterChainV6, d.isolationChain1V6, d.isolationChain2V6, err = setupIPChains(d.config, iptables.IPv6)
 		assert.NilError(t, err)
@@ -485,7 +486,7 @@ func TestMirroredWSL2Workaround(t *testing.T) {
 				assert.NilError(t, err)
 			}
 
-			assert.NilError(t, setupHashNetIpset(ipsetExtBridges4, unix.AF_INET))
+			assert.NilError(t, setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET))
 
 			config := configuration{EnableIPTables: true}
 			if tc.userlandProxy {

@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/internal/nlwrap"
 	"github.com/docker/docker/internal/testutils/netnsutils"
 	"github.com/docker/docker/libnetwork/driverapi"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/fwipt"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
 	"github.com/docker/docker/libnetwork/ipamapi"
 	"github.com/docker/docker/libnetwork/ipams/defaultipam"
@@ -535,17 +536,17 @@ func TestCreateMultipleNetworks(t *testing.T) {
 // Verify the network isolation rules are installed for each network
 func verifyV4INCEntries(networks map[string]*bridgeNetwork, t *testing.T) {
 	iptable := iptables.GetIptable(iptables.IPv4)
-	out1, err := iptable.Raw("-S", IsolationChain1)
+	out1, err := iptable.Raw("-S", fwipt.IsolationChain1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out2, err := iptable.Raw("-S", IsolationChain2)
+	out2, err := iptable.Raw("-S", fwipt.IsolationChain2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, n := range networks {
-		re := regexp.MustCompile(fmt.Sprintf("-i %s ! -o %s -j %s", n.config.BridgeName, n.config.BridgeName, IsolationChain2))
+		re := regexp.MustCompile(fmt.Sprintf("-i %s ! -o %s -j %s", n.config.BridgeName, n.config.BridgeName, fwipt.IsolationChain2))
 		matches := re.FindAllString(string(out1[:]), -1)
 		if len(matches) != 1 {
 			t.Fatalf("Cannot find expected inter-network isolation rules in IP Tables for network %s:\n%s.", n.id, string(out1[:]))
@@ -860,7 +861,7 @@ func TestLinkContainers(t *testing.T) {
 		t.Fatalf("Failed to program external connectivity: %v", err)
 	}
 
-	out, _ := iptable.Raw("-L", DockerChain)
+	out, _ := iptable.Raw("-L", fwipt.DockerChain)
 	for _, pm := range exposedPorts {
 		regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
 		re := regexp.MustCompile(regex)
@@ -886,7 +887,7 @@ func TestLinkContainers(t *testing.T) {
 		t.Fatal("Failed to unlink ep1 and ep2")
 	}
 
-	out, _ = iptable.Raw("-L", DockerChain)
+	out, _ = iptable.Raw("-L", fwipt.DockerChain)
 	for _, pm := range exposedPorts {
 		regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
 		re := regexp.MustCompile(regex)
@@ -914,7 +915,7 @@ func TestLinkContainers(t *testing.T) {
 	}
 	err = d.ProgramExternalConnectivity(context.Background(), "net1", "ep2", sbOptions)
 	if err != nil {
-		out, _ = iptable.Raw("-L", DockerChain)
+		out, _ = iptable.Raw("-L", fwipt.DockerChain)
 		for _, pm := range exposedPorts {
 			regex := fmt.Sprintf("%s dpt:%d", pm.Proto.String(), pm.Port)
 			re := regexp.MustCompile(regex)
@@ -1146,13 +1147,13 @@ func TestCleanupIptableRules(t *testing.T) {
 		table      iptables.Table
 		expRemoved bool
 	}{
-		{name: DockerChain, table: iptables.Nat, expRemoved: true},
-		// The filter-FORWARD chain has references to DockerChain and IsolationChain1,
+		{name: fwipt.DockerChain, table: iptables.Nat, expRemoved: true},
+		// The filter-FORWARD chain has references to fwipt.DockerChain and fwipt.IsolationChain1,
 		// so the chains won't be removed - but they should be flushed. (This has
 		// long/always been the case for the daemon, its filter-FORWARD rules aren't
 		// removed.)
-		{name: DockerChain, table: iptables.Filter},
-		{name: IsolationChain1, table: iptables.Filter},
+		{name: fwipt.DockerChain, table: iptables.Filter},
+		{name: fwipt.IsolationChain1, table: iptables.Filter},
 	}
 
 	ipVersions := []iptables.IPVersion{iptables.IPv4, iptables.IPv6}
@@ -1161,8 +1162,8 @@ func TestCleanupIptableRules(t *testing.T) {
 		iptables.IPv6: {EnableIP6Tables: true},
 	}
 
-	assert.NilError(t, setupHashNetIpset(ipsetExtBridges4, unix.AF_INET))
-	assert.NilError(t, setupHashNetIpset(ipsetExtBridges6, unix.AF_INET6))
+	assert.NilError(t, setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET))
+	assert.NilError(t, setupHashNetIpset(fwipt.IpsetExtBridges6, unix.AF_INET6))
 
 	for _, version := range ipVersions {
 		_, _, _, _, err := setupIPChains(configs[version], version)

@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/fwipt"
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netutils"
 	"github.com/docker/docker/libnetwork/portallocator"
@@ -811,7 +812,7 @@ func setPerPortNAT(b portBinding, ipv iptables.IPVersion, proxyPath string, brid
 	if ipv == iptables.IPv6 {
 		args = append(args, "!", "-s", "fe80::/10")
 	}
-	rule := iptRule{ipv: ipv, table: iptables.Nat, chain: DockerChain, args: args}
+	rule := iptRule{ipv: ipv, table: iptables.Nat, chain: fwipt.DockerChain, args: args}
 	if err := appendOrDelChainRule(rule, "DNAT", enable); err != nil {
 		return err
 	}
@@ -844,7 +845,7 @@ func setPerPortForwarding(b portBinding, ipv iptables.IPVersion, bridgeName stri
 		"--dport", strconv.Itoa(int(b.Port)),
 		"-j", "ACCEPT",
 	}
-	rule := iptRule{ipv: ipv, table: iptables.Filter, chain: DockerChain, args: args}
+	rule := iptRule{ipv: ipv, table: iptables.Filter, chain: fwipt.DockerChain, args: args}
 	if err := programChainRule(rule, "OPEN PORT", enable); err != nil {
 		return err
 	}

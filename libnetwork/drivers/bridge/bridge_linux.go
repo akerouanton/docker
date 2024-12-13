@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/internal/nlwrap"
 	"github.com/docker/docker/libnetwork/datastore"
 	"github.com/docker/docker/libnetwork/driverapi"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/fwipt"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/rlkclient"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
 	"github.com/docker/docker/libnetwork/iptables"
@@ -536,7 +537,7 @@ func (d *driver) configure(option map[string]interface{}) error {
 	if config.EnableIPTables {
 		removeIPChains(iptables.IPv4)
 
-		if err := setupHashNetIpset(ipsetExtBridges4, unix.AF_INET); err != nil {
+		if err := setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET); err != nil {
 			return err
 		}
 		natChain, filterChain, isolationChain1, isolationChain2, err = setupIPChains(config, iptables.IPv4)
@@ -564,7 +565,7 @@ func (d *driver) configure(option map[string]interface{}) error {
 
 		removeIPChains(iptables.IPv6)
 
-		if err := setupHashNetIpset(ipsetExtBridges6, unix.AF_INET6); err != nil {
+		if err := setupHashNetIpset(fwipt.IpsetExtBridges6, unix.AF_INET6); err != nil {
 			// Continue, IPv4 will work (as below).
 			log.G(context.TODO()).WithError(err).Warn("ip6tables is enabled, but cannot set up IPv6 ipset")
 		} else {

@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/fwipt"
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/types"
 )
@@ -66,7 +67,7 @@ func linkContainers(action iptables.Action, parentIP, childIP net.IP, ports []ty
 		return fmt.Errorf("cannot link to a container with an empty child IP address")
 	}
 
-	chain := iptables.ChainInfo{Name: DockerChain}
+	chain := iptables.ChainInfo{Name: fwipt.DockerChain}
 	for _, port := range ports {
 		err := chain.Link(action, parentIP, childIP, int(port.Port), port.Proto.String(), bridge)
 		if !ignoreErrors && err != nil {
