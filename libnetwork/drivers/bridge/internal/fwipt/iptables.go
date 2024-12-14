@@ -116,3 +116,16 @@ func programChainRule(rule iptRule, ruleDescr string, insert bool) error {
 	}
 	return nil
 }
+
+func appendOrDelChainRule(rule iptRule, ruleDescr string, append bool) error {
+	operation := "disable"
+	fn := rule.Delete
+	if append {
+		operation = "enable"
+		fn = rule.Append
+	}
+	if err := fn(); err != nil {
+		return fmt.Errorf("Unable to %s %s rule: %w", operation, ruleDescr, err)
+	}
+	return nil
+}

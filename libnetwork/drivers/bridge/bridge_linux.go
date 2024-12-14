@@ -90,6 +90,33 @@ type networkConfiguration struct {
 	BridgeIfaceCreator ifaceCreator
 }
 
+func (n *bridgeNetwork) firewallConfig(ipVer iptables.IPVersion) fwipt.Network {
+	n.Lock()
+	defer n.Unlock()
+
+	n.driver.Lock()
+	driverConfig := n.driver.config
+	n.driver.Unlock()
+
+	conf := fwipt.Network{
+		BridgeName: n.config.BridgeName,
+		BridgeAddr: n.config.AddressIPv4,
+		ICC:        n.config.EnableICC,
+		Hairpin:    !driverConfig.EnableUserlandProxy,
+		Masquerade: n.config.EnableIPMasquerade,
+		HostIP:     n.config.HostIPv4,
+		Internal:   n.config.Internal,
+		IsNATed:    n.config.GwModeIPv4.nat(),
+	}
+
+	if ipVer == iptables.IPv6 {
+		conf.BridgeAddr = n.config.AddressIPv6
+		conf.HostIP = n.config.HostIPv6
+	}
+
+	return conf
+}
+
 // ifaceCreator represents how the bridge interface was created
 type ifaceCreator int8
 
@@ -366,6 +393,10 @@ func newGwMode(gwMode string) (gwMode, error) {
 		return gwModeRouted, nil
 	}
 	return gwModeDefault, fmt.Errorf("unknown gateway mode %s", gwMode)
+}
+
+func (m gwMode) nat() bool {
+	return m == gwModeNAT
 }
 
 func (m gwMode) routed() bool {
