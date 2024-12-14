@@ -2,8 +2,6 @@ package bridge
 
 import (
 	"net"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/docker/docker/internal/nlwrap"
@@ -13,9 +11,7 @@ import (
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 	"gotest.tools/v3/assert"
-	is "gotest.tools/v3/assert/cmp"
 )
 
 const (
@@ -84,8 +80,11 @@ func TestSetupIPChains(t *testing.T) {
 	}
 	d := &driver{
 		config: driverconfig,
+		fw: fwipt.New(fwipt.Config{
+			EnableV4: true,
+		}),
 	}
-	assertChainConfig(d, t)
+	assert.NilError(t, d.fw.Initialize())
 
 	config := getBasicTestConfig()
 	br := &bridgeInterface{nlh: nh}
@@ -150,23 +149,6 @@ func assertIPTableChainProgramming(rule iptRule, descr string, t *testing.T) {
 	}
 	if rule.Exists() {
 		t.Fatalf("Failed to effectively remove iptable rule: %s", descr)
-	}
-}
-
-// Assert function which create chains.
-func assertChainConfig(d *driver, t *testing.T) {
-	var err error
-
-	err = setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET)
-	assert.NilError(t, err)
-	d.natChain, d.filterChain, d.isolationChain1, d.isolationChain2, err = setupIPChains(d.config, iptables.IPv4)
-	assert.NilError(t, err)
-
-	if d.config.EnableIP6Tables {
-		err = setupHashNetIpset(fwipt.IpsetExtBridges6, unix.AF_INET6)
-		assert.NilError(t, err)
-		d.natChainV6, d.filterChainV6, d.isolationChain1V6, d.isolationChain2V6, err = setupIPChains(d.config, iptables.IPv6)
-		assert.NilError(t, err)
 	}
 }
 
@@ -423,79 +405,6 @@ func TestOutgoingNATRules(t *testing.T) {
 			} {
 				assert.Equal(t, rc.rule.Exists(), rc.want)
 			}
-		})
-	}
-}
-
-func TestMirroredWSL2Workaround(t *testing.T) {
-	for _, tc := range []struct {
-		desc             string
-		loopback0        bool
-		userlandProxy    bool
-		wslinfoPerm      os.FileMode // 0 for no-file
-		expLoopback0Rule bool
-	}{
-		{
-			desc: "No loopback0",
-		},
-		{
-			desc:             "WSL2 mirrored",
-			loopback0:        true,
-			userlandProxy:    true,
-			wslinfoPerm:      0o777,
-			expLoopback0Rule: true,
-		},
-		{
-			desc:          "loopback0 but wslinfo not executable",
-			loopback0:     true,
-			userlandProxy: true,
-			wslinfoPerm:   0o666,
-		},
-		{
-			desc:          "loopback0 but no wslinfo",
-			loopback0:     true,
-			userlandProxy: true,
-		},
-		{
-			desc:        "loopback0 but no userland proxy",
-			loopback0:   true,
-			wslinfoPerm: 0o777,
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			defer netnsutils.SetupTestOSContext(t)()
-
-			if tc.loopback0 {
-				loopback0 := &netlink.Dummy{
-					LinkAttrs: netlink.LinkAttrs{
-						Name: "loopback0",
-					},
-				}
-				err := netlink.LinkAdd(loopback0)
-				assert.NilError(t, err)
-			}
-
-			if tc.wslinfoPerm != 0 {
-				wslinfoPathOrig := wslinfoPath
-				defer func() {
-					wslinfoPath = wslinfoPathOrig
-				}()
-				tmpdir := t.TempDir()
-				wslinfoPath = filepath.Join(tmpdir, "wslinfo")
-				err := os.WriteFile(wslinfoPath, []byte("#!/bin/sh\necho dummy file\n"), tc.wslinfoPerm)
-				assert.NilError(t, err)
-			}
-
-			assert.NilError(t, setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET))
-
-			config := configuration{EnableIPTables: true}
-			if tc.userlandProxy {
-				config.UserlandProxyPath = "some-proxy"
-				config.EnableUserlandProxy = true
-			}
-			_, _, _, _, err := setupIPChains(config, iptables.IPv4)
-			assert.NilError(t, err)
-			assert.Check(t, is.Equal(mirroredWSL2Rule().Exists(), tc.expLoopback0Rule))
 		})
 	}
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/containerd/log"
 	"github.com/docker/docker/errdefs"
-	"github.com/docker/docker/internal/modprobe"
 	"github.com/docker/docker/internal/nlwrap"
 	"github.com/docker/docker/libnetwork/datastore"
 	"github.com/docker/docker/libnetwork/driverapi"
@@ -29,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -149,20 +147,13 @@ var newPortDriverClient = func(ctx context.Context) (portDriverClient, error) {
 }
 
 type driver struct {
-	config            configuration
-	natChain          *iptables.ChainInfo
-	filterChain       *iptables.ChainInfo
-	isolationChain1   *iptables.ChainInfo
-	isolationChain2   *iptables.ChainInfo
-	natChainV6        *iptables.ChainInfo
-	filterChainV6     *iptables.ChainInfo
-	isolationChain1V6 *iptables.ChainInfo
-	isolationChain2V6 *iptables.ChainInfo
-	networks          map[string]*bridgeNetwork
-	store             *datastore.Store
-	nlh               nlwrap.Handle
-	portDriverClient  portDriverClient
-	configNetwork     sync.Mutex
+	config           configuration
+	fw               *fwipt.IPTables
+	networks         map[string]*bridgeNetwork
+	store            *datastore.Store
+	nlh              nlwrap.Handle
+	portDriverClient portDriverClient
+	configNetwork    sync.Mutex
 	sync.Mutex
 }
 
@@ -408,19 +399,19 @@ func (n *bridgeNetwork) iptablesEnabled(version iptables.IPVersion) (bool, error
 	return n.driver.config.EnableIPTables, nil
 }
 
-func (n *bridgeNetwork) getDriverChains(version iptables.IPVersion) (*iptables.ChainInfo, *iptables.ChainInfo, *iptables.ChainInfo, *iptables.ChainInfo, error) {
+func (n *bridgeNetwork) getDriverChains(version iptables.IPVersion) (*iptables.ChainInfo, *iptables.ChainInfo, error) {
 	n.Lock()
 	defer n.Unlock()
 
 	if n.driver == nil {
-		return nil, nil, nil, nil, types.InvalidParameterErrorf("no driver found")
+		return nil, nil, types.InvalidParameterErrorf("no driver found")
 	}
 
 	if version == iptables.IPv6 {
-		return n.driver.natChainV6, n.driver.filterChainV6, n.driver.isolationChain1V6, n.driver.isolationChain2V6, nil
+		return n.driver.fw.NatChainV6, n.driver.fw.FilterChainV6, nil
 	}
 
-	return n.driver.natChain, n.driver.filterChain, n.driver.isolationChain1, n.driver.isolationChain2, nil
+	return n.driver.fw.NatChain, n.driver.fw.FilterChain, nil
 }
 
 func (n *bridgeNetwork) getNetworkBridgeName() string {
@@ -506,17 +497,8 @@ func (n *bridgeNetwork) isolateNetwork(enable bool) error {
 
 func (d *driver) configure(option map[string]interface{}) error {
 	var (
-		config            configuration
-		err               error
-		natChain          *iptables.ChainInfo
-		filterChain       *iptables.ChainInfo
-		isolationChain1   *iptables.ChainInfo
-		isolationChain2   *iptables.ChainInfo
-		natChainV6        *iptables.ChainInfo
-		filterChainV6     *iptables.ChainInfo
-		isolationChain1V6 *iptables.ChainInfo
-		isolationChain2V6 *iptables.ChainInfo
-		pdc               portDriverClient
+		config configuration
+		pdc    portDriverClient
 	)
 
 	switch opt := option[netlabel.GenericData].(type) {
@@ -534,59 +516,13 @@ func (d *driver) configure(option map[string]interface{}) error {
 		return &ErrInvalidDriverConfig{}
 	}
 
-	if config.EnableIPTables {
-		removeIPChains(iptables.IPv4)
-
-		if err := setupHashNetIpset(fwipt.IpsetExtBridges4, unix.AF_INET); err != nil {
-			return err
-		}
-		natChain, filterChain, isolationChain1, isolationChain2, err = setupIPChains(config, iptables.IPv4)
-		if err != nil {
-			return err
-		}
-
-		// Make sure on firewall reload, first thing being re-played is chains creation
-		iptables.OnReloaded(func() {
-			log.G(context.TODO()).Debugf("Recreating iptables chains on firewall reload")
-			if _, _, _, _, err := setupIPChains(config, iptables.IPv4); err != nil {
-				log.G(context.TODO()).WithError(err).Error("Error reloading iptables chains")
-			}
-		})
-	}
-
-	if config.EnableIP6Tables {
-		if err := modprobe.LoadModules(context.TODO(), func() error {
-			iptable := iptables.GetIptable(iptables.IPv6)
-			_, err := iptable.Raw("-t", "filter", "-n", "-L", "FORWARD")
-			return err
-		}, "ip6_tables"); err != nil {
-			log.G(context.TODO()).WithError(err).Debug("Loading ip6_tables")
-		}
-
-		removeIPChains(iptables.IPv6)
-
-		if err := setupHashNetIpset(fwipt.IpsetExtBridges6, unix.AF_INET6); err != nil {
-			// Continue, IPv4 will work (as below).
-			log.G(context.TODO()).WithError(err).Warn("ip6tables is enabled, but cannot set up IPv6 ipset")
-		} else {
-			natChainV6, filterChainV6, isolationChain1V6, isolationChain2V6, err = setupIPChains(config, iptables.IPv6)
-			if err != nil {
-				// If the chains couldn't be set up, it's probably because the kernel has no IPv6
-				// support, or it doesn't have module ip6_tables loaded. It won't be possible to
-				// create IPv6 networks without enabling ip6_tables in the kernel, or disabling
-				// ip6tables in the daemon config. But, allow the daemon to start because IPv4
-				// will work. So, log the problem, and continue.
-				log.G(context.TODO()).WithError(err).Warn("ip6tables is enabled, but cannot set up ip6tables chains")
-			} else {
-				// Make sure on firewall reload, first thing being re-played is chains creation
-				iptables.OnReloaded(func() {
-					log.G(context.TODO()).Debugf("Recreating ip6tables chains on firewall reload")
-					if _, _, _, _, err := setupIPChains(config, iptables.IPv6); err != nil {
-						log.G(context.TODO()).WithError(err).Error("Error reloading ip6tables chains")
-					}
-				})
-			}
-		}
+	fw := fwipt.New(fwipt.Config{
+		EnableV4:             config.EnableIPTables,
+		EnableV6:             config.EnableIP6Tables,
+		EnableWSL2Workaround: config.EnableUserlandProxy && config.UserlandProxyPath != "",
+	})
+	if err := fw.Initialize(); err != nil {
+		return fmt.Errorf("failed to initialize iptables: %w", err)
 	}
 
 	if config.Rootless {
@@ -598,32 +534,12 @@ func (d *driver) configure(option map[string]interface{}) error {
 	}
 
 	d.Lock()
-	d.natChain = natChain
-	d.filterChain = filterChain
-	d.isolationChain1 = isolationChain1
-	d.isolationChain2 = isolationChain2
-	d.natChainV6 = natChainV6
-	d.filterChainV6 = filterChainV6
-	d.isolationChain1V6 = isolationChain1V6
-	d.isolationChain2V6 = isolationChain2V6
 	d.portDriverClient = pdc
 	d.config = config
+	d.fw = fw
 	d.Unlock()
 
 	return d.initStore(option)
-}
-
-func setupHashNetIpset(name string, family uint8) error {
-	if err := netlink.IpsetCreate(name, "hash:net", netlink.IpsetCreateOptions{
-		Replace: true,
-		Family:  family,
-	}); err != nil {
-		return err
-	}
-	if err := netlink.IpsetFlush(name); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (d *driver) getNetwork(id string) (*bridgeNetwork, error) {
