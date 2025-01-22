@@ -176,9 +176,9 @@ func (n *bridgeNetwork) addPortMappings(
 	}
 
 	for i := range bindings {
-		if pdc != nil && bindings[i].HostPort != 0 {
+		b := bindings[i]
+		if pdc != nil && b.HostPort != 0 {
 			var err error
-			b := &bindings[i]
 			hip, ok := netip.AddrFromSlice(b.HostIP)
 			if !ok {
 				return nil, fmt.Errorf("invalid host IP address in %s", b)
@@ -187,12 +187,16 @@ func (n *bridgeNetwork) addPortMappings(
 			if !ok {
 				return nil, fmt.Errorf("invalid child host IP address %s in %s", b.childHostIP, b)
 			}
-			b.portDriverRemove, err = pdc.AddPort(ctx, b.Proto.String(), hip, chip, int(b.HostPort))
+			bindings[i].portDriverRemove, err = pdc.AddPort(ctx, b.Proto.String(), hip, chip, int(b.HostPort))
 			if err != nil {
 				return nil, err
 			}
 		}
-		if err := n.setPerPortIptables(bindings[i], true); err != nil {
+		if err := n.setPerPortIptables(b, true); err != nil {
+			return nil, err
+		}
+		bridgeName := n.getNetworkBridgeName()
+		if err := n.filterDirectAccess(b, bridgeName, true); err != nil {
 			return nil, err
 		}
 	}
@@ -744,6 +748,10 @@ func (n *bridgeNetwork) releasePortBindings(pbs []portBinding) error {
 		if err := n.setPerPortIptables(pb, false); err != nil {
 			errs = append(errs, fmt.Errorf("failed to remove iptables rules for port mapping %s: %w", pb, err))
 		}
+		bridgeName := n.getNetworkBridgeName()
+		if err := n.filterDirectAccess(pb, bridgeName, false); err != nil {
+			errs = append(errs, err)
+		}
 		if pb.HostPort > 0 {
 			portallocator.Get().ReleasePort(pb.childHostIP, pb.Proto.String(), int(pb.HostPort))
 		}
@@ -861,6 +869,35 @@ func setPerPortForwarding(b portBinding, ipv iptables.IPVersion, bridgeName stri
 		if err := appendOrDelChainRule(rule, "SCTP CHECKSUM", enable); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// filterDirectAccess adds an iptables rules that drops 'direct' remote
+// connections made to the container's IP address, when the network gateway
+// mode is "nat".
+//
+// This is a no-op if the gw_mode is "routed".
+func (n *bridgeNetwork) filterDirectAccess(b portBinding, bridgeName string, enable bool) error {
+	if b.HostPort == 0 {
+		// Direct routing mode is used.
+		return nil
+	}
+
+	ipv := iptables.IPv4
+	if b.IP.To4() == nil {
+		ipv = iptables.IPv6
+	}
+	drop := iptables.Rule{IPVer: ipv, Table: iptables.Raw, Chain: "PREROUTING", Args: []string{
+		"-p", b.Proto.String(),
+		"-d", b.IP.String(),
+		"--dport", strconv.Itoa(int(b.Port)),
+		"!", "-i", bridgeName,
+		"-j", "DROP",
+	}}
+	if err := appendOrDelChainRule(drop, "DIRECT ACCESS FILTERING - DROP", enable); err != nil {
+		return err
 	}
 
 	return nil
