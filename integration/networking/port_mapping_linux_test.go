@@ -1033,6 +1033,75 @@ func TestDirectRemoteAccessOnExposedPort(t *testing.T) {
 	}
 }
 
+// TestAccessPortPublishedOnLoopbackAddress checks that ports published on
+// loopback addresses can't be accessed by remote hosts.
+//
+// Regression test for https://github.com/moby/moby/issues/45610.
+func TestAccessPortPublishedOnLoopbackAddress(t *testing.T) {
+	// This test checks iptables rules that live in dockerd's netns. In the case
+	// of rootlesskit, this is not the same netns as the host, so they don't
+	// have any effect.
+	// TODO(aker): we need to figure out what we want to do for rootlesskit.
+	skip.If(t, testEnv.IsRootless, "rootlesskit has its own netns")
+
+	ctx := setupTest(t)
+
+	l3 := networking.NewL3Segment(t, "test-access-loopback",
+		netip.MustParsePrefix("192.168.121.1/24"))
+	defer l3.Destroy(t)
+	// "docker" is the host where dockerd is running.
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix("192.168.121.2/24"))
+	l3.AddHost(t, "attacker", "test-access-loopback-attacker", "eth0",
+		netip.MustParsePrefix("192.168.121.3/24"))
+
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	const bridgeName = "brtest"
+	network.CreateNoError(ctx, t, c, bridgeName,
+		network.WithDriver("bridge"),
+		network.WithOption(bridge.BridgeName, bridgeName),
+	)
+	defer network.RemoveNoError(ctx, t, c, bridgeName)
+
+	const (
+		loIP     = "127.0.0.2"
+		hostPort = "5000"
+	)
+	serverID := container.Run(ctx, t, c,
+		container.WithName("server"),
+		container.WithCmd("nc", "-lup", "5000"),
+		container.WithExposedPorts("5000/udp"),
+		// This port is mapped on 127.0.0.2, so it should not be remotely accessible.
+		container.WithPortMap(nat.PortMap{"5000/udp": {{HostIP: loIP, HostPort: hostPort}}}),
+		container.WithNetworkMode(bridgeName))
+	defer c.ContainerRemove(ctx, serverID, containertypes.RemoveOptions{Force: true})
+
+	// Check if the local host has access to the published port.
+	res := sendPayloadFromHost(t, l3.Hosts["docker"], loIP, hostPort, "foobar", func() bool {
+		logs := getContainerStdout(t, ctx, c, serverID)
+		return strings.Contains(logs, "foobar")
+	})
+	assert.Assert(t, res, "Local host should have access to the published port, but no payload was received by the container")
+
+	// Add a route to the loopback address on the attacker host in order to
+	// conduct the attack scenario.
+	l3.Hosts["attacker"].Run(t, "ip", "route", "add", loIP+"/32", "via", "192.168.121.2", "dev", "eth0")
+	defer l3.Hosts["attacker"].Run(t, "ip", "route", "delete", loIP+"/32", "via", "192.168.121.2", "dev", "eth0")
+
+	// Check that remote access to the loopback address is correctly blocked.
+	res = sendPayloadFromHost(t, l3.Hosts["attacker"], loIP, hostPort, "bar baz", func() bool {
+		logs := getContainerStdout(t, ctx, c, serverID)
+		return strings.Contains(logs, "bar baz")
+	})
+	assert.Assert(t, !res, "Remote host should not have access to the published port, but the payload was received by the container")
+}
+
 // Send a payload to daddr:dport a few times from the 'host' netns. Stop
 // sending payloads when 'check' returns true. Return the result of 'check'.
 //
