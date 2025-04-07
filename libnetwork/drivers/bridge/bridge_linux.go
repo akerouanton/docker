@@ -57,6 +57,8 @@ const (
 // FIXME(robmry) - it doesn't belong here.
 const DockerForwardChain = iptabler.DockerForwardChain
 
+const spanPrefix = "libnetwork.drivers.bridge"
+
 // configuration info for the "bridge" driver.
 type configuration struct {
 	EnableIPForwarding       bool
@@ -784,7 +786,7 @@ func (d *driver) checkConflict(config *networkConfiguration) error {
 }
 
 func (d *driver) createNetwork(ctx context.Context, config *networkConfiguration) (err error) {
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.createNetwork", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".createNetwork", trace.WithAttributes(
 		attribute.Bool("bridge.enable_ipv4", config.EnableIPv4),
 		attribute.Bool("bridge.enable_ipv6", config.EnableIPv6),
 		attribute.Bool("bridge.icc", config.EnableICC),
@@ -1010,7 +1012,7 @@ func (d *driver) deleteNetwork(nid string) error {
 }
 
 func addToBridge(ctx context.Context, nlh nlwrap.Handle, ifaceName, bridgeName string) error {
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.addToBridge", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".addToBridge", trace.WithAttributes(
 		attribute.String("ifaceName", ifaceName),
 		attribute.String("bridgeName", bridgeName)))
 	defer span.End()
@@ -1040,7 +1042,7 @@ func (d *driver) CreateEndpoint(ctx context.Context, nid, eid string, ifInfo dri
 		return errors.New("invalid interface info passed")
 	}
 
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.CreateEndpoint", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".CreateEndpoint", trace.WithAttributes(
 		attribute.String("nid", nid),
 		attribute.String("eid", eid)))
 	defer span.End()
@@ -1249,7 +1251,7 @@ func createVeth(ctx context.Context, hostIfName, containerIfName string, ifInfo 
 }
 
 func (d *driver) linkUp(ctx context.Context, host netlink.Link) error {
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.linkUp", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".linkUp", trace.WithAttributes(
 		attribute.String("host", host.Attrs().Name)))
 	defer span.End()
 
@@ -1378,7 +1380,7 @@ func (d *driver) EndpointOperInfo(nid, eid string) (map[string]interface{}, erro
 
 // Join method is invoked when a Sandbox is attached to an endpoint.
 func (d *driver) Join(ctx context.Context, nid, eid string, sboxKey string, jinfo driverapi.JoinInfo, epOpts, sbOpts map[string]interface{}) error {
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.Join", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".Join", trace.WithAttributes(
 		attribute.String("nid", nid),
 		attribute.String("eid", eid),
 		attribute.String("sboxKey", sboxKey)))
@@ -1450,7 +1452,7 @@ func (d *driver) Leave(nid, eid string) error {
 }
 
 func (d *driver) ProgramExternalConnectivity(ctx context.Context, nid, eid string, options map[string]interface{}) error {
-	ctx, span := otel.Tracer("").Start(ctx, "libnetwork.drivers.bridge.ProgramExternalConnectivity", trace.WithAttributes(
+	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".ProgramExternalConnectivity", trace.WithAttributes(
 		attribute.String("nid", nid),
 		attribute.String("eid", eid)))
 	defer span.End()
