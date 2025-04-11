@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/log"
 	"github.com/docker/docker/pkg/ioutils"
+	"golang.org/x/sys/unix"
 )
 
 const maxBodySize = 1048576 // 1MB
@@ -34,11 +35,12 @@ const maxBodySize = 1048576 // 1MB
 // If multiple authZ plugins are specified, the block/allow decision is based on ANDing all plugin results
 // For response manipulation, the response from each plugin is piped between plugins. Plugin execution order
 // is determined according to daemon parameters
-func NewCtx(authZPlugins []Plugin, user, userAuthNMethod, requestMethod, requestURI string) *Ctx {
+func NewCtx(authZPlugins []Plugin, user, userAuthNMethod string, unixCreds *unix.Ucred, requestMethod, requestURI string) *Ctx {
 	return &Ctx{
 		plugins:         authZPlugins,
 		user:            user,
 		userAuthNMethod: userAuthNMethod,
+		unixCreds:       unixCreds,
 		requestMethod:   requestMethod,
 		requestURI:      requestURI,
 	}
@@ -48,6 +50,7 @@ func NewCtx(authZPlugins []Plugin, user, userAuthNMethod, requestMethod, request
 type Ctx struct {
 	user            string
 	userAuthNMethod string
+	unixCreds       *unix.Ucred
 	requestMethod   string
 	requestURI      string
 	plugins         []Plugin
@@ -85,12 +88,13 @@ func (ctx *Ctx) AuthZRequest(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	ctx.authReq = &Request{
-		User:            ctx.user,
-		UserAuthNMethod: ctx.userAuthNMethod,
-		RequestMethod:   ctx.requestMethod,
-		RequestURI:      ctx.requestURI,
-		RequestBody:     body,
-		RequestHeaders:  headers(r.Header),
+		User:             ctx.user,
+		UserAuthNMethod:  ctx.userAuthNMethod,
+		RequestMethod:    ctx.requestMethod,
+		RequestURI:       ctx.requestURI,
+		RequestBody:      body,
+		RequestHeaders:   headers(r.Header),
+		RequestUnixCreds: ctx.unixCreds,
 	}
 
 	if r.TLS != nil {

@@ -2,11 +2,14 @@ package authorization // import "github.com/docker/docker/pkg/authorization"
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"sync"
 
 	"github.com/containerd/log"
 	"github.com/docker/docker/pkg/plugingetter"
+	"golang.org/x/sys/unix"
 )
 
 // Middleware uses a list of plugins to
@@ -71,7 +74,17 @@ func (m *Middleware) WrapHandler(handler func(ctx context.Context, w http.Respon
 			userAuthNMethod = "TLS"
 		}
 
-		authCtx := NewCtx(plugins, user, userAuthNMethod, r.Method, r.RequestURI)
+		var unixCreds *unix.Ucred
+		if uconn, ok := ctx.Value("rawConn").(*net.UnixConn); ok {
+			var err error
+			if unixCreds, err = getUnixCreds(uconn); err != nil {
+				log.G(ctx).WithError(err).Errorf("failed to get unix credentials: %w", err)
+			} else {
+				userAuthNMethod = "UNIX"
+			}
+		}
+
+		authCtx := NewCtx(plugins, user, userAuthNMethod, unixCreds, r.Method, r.RequestURI)
 
 		if err := authCtx.AuthZRequest(w, r); err != nil {
 			log.G(ctx).Errorf("AuthZRequest for %s %s returned error: %s", r.Method, r.RequestURI, err)
@@ -107,4 +120,20 @@ func (m *Middleware) WrapHandler(handler func(ctx context.Context, w http.Respon
 
 		return nil
 	}
+}
+
+func getUnixCreds(uconn *net.UnixConn) (*unix.Ucred, error) {
+	var creds *unix.Ucred
+	rconn, err := uconn.SyscallConn()
+	if err != nil {
+		return nil, fmt.Errorf("getting syscall conn: %w", err)
+	}
+	rconn.Control(func(fd uintptr) {
+		// Get the credentials of the peer socket
+		creds, err = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting peer creds: %w", err)
+	}
+	return creds, nil
 }

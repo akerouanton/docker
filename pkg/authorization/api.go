@@ -4,6 +4,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -64,6 +66,8 @@ type Request struct {
 
 	// RequestPeerCertificates stores the request's TLS peer certificates in PEM format
 	RequestPeerCertificates []*PeerCertificate `json:"RequestPeerCertificates,omitempty"`
+
+	RequestUnixCreds *unix.Ucred `json:"RequestUnixCreds,omitempty"`
 
 	// ResponseStatusCode stores the status code returned from docker daemon
 	ResponseStatusCode int `json:"ResponseStatusCode,omitempty"`

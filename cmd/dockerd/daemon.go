@@ -68,6 +68,8 @@ import (
 	"tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
+const connKey = "rawConn"
+
 // daemonCLI represents the daemon CLI.
 type daemonCLI struct {
 	*config.Config
@@ -186,6 +188,9 @@ func (cli *daemonCLI) start(ctx context.Context) (err error) {
 	defer cancel()
 
 	httpServer := &http.Server{
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connKey, c)
+		},
 		ReadHeaderTimeout: 5 * time.Minute, // "G112: Potential Slowloris Attack (gosec)"; not a real concern for our use, so setting a long timeout.
 	}
 	apiShutdownCtx, apiShutdownCancel := context.WithCancel(context.WithoutCancel(ctx))
