@@ -52,8 +52,65 @@ import (
 	"text/template"
 
 	"github.com/containerd/log"
+	"github.com/docker/docker/internal/sliceutil"
 	"go.opentelemetry.io/otel"
 )
+
+type RulesBuilder struct {
+	rules    []Rule
+	builders []RuleBuilder
+}
+
+func (rb RulesBuilder) Rules() []Rule {
+	return append(rb.rules, sliceutil.Map(rb.builders, func(b RuleBuilder) Rule { return b.Rule() })...)
+}
+
+func (rb RulesBuilder) AddRule(r Rule) {
+	rb.rules = append(rb.rules, r)
+}
+
+func (rb RulesBuilder) AddRuleBuilder(r RuleBuilder) RuleBuilder {
+	rb.builders = append(rb.builders, r)
+	return r
+}
+
+func (rb RulesBuilder) Append(rs ...Rule) {
+	rb.rules = append(rb.rules, rs...)
+}
+
+type Rule struct {
+	Chain string
+	Group RuleGroup
+	Expr  string
+}
+
+func (r Rule) Rule() Rule {
+	return r
+}
+
+type RuleBuilder struct {
+	Chain string
+	Group RuleGroup
+	expr  *strings.Builder
+}
+
+func (rb RuleBuilder) Write(expr string) {
+	if rb.expr.Len() > 0 {
+		rb.expr.WriteString(" ")
+	}
+	rb.expr.WriteString(expr)
+}
+
+func (rb RuleBuilder) Writef(format string, args ...interface{}) {
+	if rb.expr.Len() > 0 {
+		rb.expr.WriteString(" ")
+	}
+	rb.expr.WriteString(fmt.Sprintf(format, args...))
+}
+
+func (rb *RuleBuilder) Rule() Rule {
+	return Rule{Chain: rb.Chain, Group: rb.Group, Expr: rb.expr.String()}
+}
 
 // Prefix for OTEL span names.
 const spanPrefix = "libnetwork.internal.nftables"

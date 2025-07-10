@@ -5,7 +5,6 @@ package nftabler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -40,13 +39,13 @@ func (n *network) modPorts(ctx context.Context, pbs []types.PortBinding, enable 
 	pbs4, pbs6 := splitByContainerFam(pbs)
 	if n.fw.config.IPv4 && n.config.Config4.Prefix.IsValid() {
 		pbc := pbContext{table: n.fw.table4, conf: n.config.Config4, ipv: firewaller.IPv4}
-		if err := n.setPerPortRules(ctx, pbs4, pbc, n.fw.config.WSL2Mirrored, enable); err != nil {
+		if err := n.setPerPortRules(ctx, pbs4, pbc, enable); err != nil {
 			return err
 		}
 	}
 	if n.fw.config.IPv6 && n.config.Config6.Prefix.IsValid() {
 		pbc := pbContext{table: n.fw.table6, conf: n.config.Config6, ipv: firewaller.IPv6}
-		if err := n.setPerPortRules(ctx, pbs6, pbc, n.fw.config.WSL2Mirrored, enable); err != nil {
+		if err := n.setPerPortRules(ctx, pbs6, pbc, enable); err != nil {
 			return err
 		}
 	}
@@ -65,118 +64,98 @@ func splitByContainerFam(pbs []types.PortBinding) ([]types.PortBinding, []types.
 	return pbs4, pbs6
 }
 
-func (n *network) setPerPortRules(ctx context.Context, pbs []types.PortBinding, pbc pbContext, wsl2Mirrored, enable bool) error {
-	if err := n.setPerPortForwarding(ctx, pbs, pbc, enable); err != nil {
-		return err
+func (n *network) setPerPortRules(ctx context.Context, pbs []types.PortBinding, pbc pbContext, enable bool) error {
+	var rb nftables.RulesBuilder
+	for _, pb := range pbs {
+		// Rules for NATed and routed ports
+		if !pbc.conf.Unprotected {
+			rb.Append(n.setPerPortForwarding(pbc.table.Family(), pb)...)
+		}
+
+		// Routed and 6to4 port mappings aren't NATed
+		if pb.HostPort == 0 || (pb.IP.To4() != nil) != (pb.HostIP.To4() != nil) {
+			continue
+		}
+
+		// Rules for NATed ports
+		rb.Append(n.setPerPortDNAT(pbc.table.Family(), pb)...)
+
+		if n.fw.config.Hairpin {
+			rb.Append(n.setPerPortHairpinMasq(pbc.table.Family(), pb)...)
+		}
+
+		// ::1 is non-routable, and thus can't be NATed.
+		if pb.HostIP.IsLoopback() && pbc.ipv == firewaller.IPv4 {
+			rb.Append(n.filterPortMappedOnLoopback(pb)...)
+		}
 	}
-	if err := n.setPerPortDNAT(ctx, pbs, pbc, enable); err != nil {
-		return err
-	}
-	if err := n.setPerPortHairpinMasq(ctx, pbs, pbc, enable); err != nil {
-		return err
-	}
-	if err := filterPortMappedOnLoopback(ctx, pbs, pbc, wsl2Mirrored, enable); err != nil {
-		return err
-	}
+
 	if err := nftApply(ctx, pbc.table); err != nil {
 		return fmt.Errorf("adding rules for bridge %s: %w", n.config.IfName, err)
 	}
 	return nil
 }
 
-func (n *network) setPerPortForwarding(ctx context.Context, pbs []types.PortBinding, pbc pbContext, enable bool) error {
-	updateFwdIn := pbc.table.ChainUpdateFunc(ctx, chainFilterFwdIn(n.config.IfName), enable)
-	for _, pb := range pbs {
-		if pbc.conf.Unprotected {
-			continue
-		}
-		// When more than one host port is mapped to a single container port, this will
-		// generate the same rule for each host port. So, ignore duplicates when adding,
-		// and missing rules when removing. (No ref-counting is currently needed because
-		// when bindings are added or removed for an endpoint, they're all added or
-		// removed. So, a rule that's added more than once will also be deleted more
-		// than once.)
-		//
-		// TODO(robmry) - track port mappings, use that to edit nftables sets when bindings are added/removed.
-		rule := fmt.Sprintf("%s daddr %s %s dport %d counter accept", pbc.table.Family(), pb.IP, pb.Proto, pb.Port)
-		if err := updateFwdIn(ctx, fwdInPortsRuleGroup, rule); err != nil &&
-			!errors.Is(err, nftables.ErrRuleExist) && !errors.Is(err, nftables.ErrRuleNotExist) {
-			return fmt.Errorf("updating forwarding rule for port %s %s:%d/%s on %s, enable=%v: %w",
-				pbc.table.Family(), pb.IP, pb.Port, pb.Proto, n.config.IfName, enable, err)
-		}
-	}
-	return nil
+func (n *network) setPerPortForwarding(fam nftables.Family, pb types.PortBinding) []nftables.Rule {
+	var rb nftables.RulesBuilder
+
+	// When more than one host port is mapped to a single container port, this will
+	// generate the same rule for each host port. So, ignore duplicates when adding,
+	// and missing rules when removing. (No ref-counting is currently needed because
+	// when bindings are added or removed for an endpoint, they're all added or
+	// removed. So, a rule that's added more than once will also be deleted more
+	// than once.)
+	//
+	// TODO(robmry) - track port mappings, use that to edit nftables sets when bindings are added/removed.
+	rb.AddRule(nftables.Rule{
+		Chain: chainFilterFwdIn(n.config.IfName),
+		Group: fwdInPortsRuleGroup,
+		Expr: fmt.Sprintf("%s daddr %s %s dport %d counter accept",
+			fam, pb.IP, pb.Proto, pb.Port),
+	})
+
+	return rb.Rules()
 }
 
-func (n *network) setPerPortDNAT(ctx context.Context, pbs []types.PortBinding, pbc pbContext, enable bool) error {
-	updater := pbc.table.ChainUpdateFunc(ctx, natChain, enable)
-	var proxySkip string
+func (n *network) setPerPortDNAT(fam nftables.Family, pb types.PortBinding) []nftables.Rule {
+	var rb nftables.RulesBuilder
+
+	r := rb.AddRuleBuilder(nftables.RuleBuilder{Chain: natChain, Group: initialRuleGroup})
 	if !n.fw.config.Hairpin {
-		proxySkip = fmt.Sprintf("iifname != %s ", n.config.IfName)
+		r.Writef("iifname != %s", n.config.IfName)
 	}
-	var v6LLSkip string
-	if pbc.table.Family() == nftables.IPv6 {
-		v6LLSkip = "ip6 saddr != fe80::/10 "
+	if fam == nftables.IPv6 {
+		r.Write("ip6 saddr != fe80::/10")
 	}
-	for _, pb := range pbs {
-		// Nothing to do if NAT is disabled.
-		if pb.HostPort == 0 {
-			continue
-		}
-		// If the binding is between containerV4 and hostV6, NAT isn't possible (the mapping
-		// is handled by docker-proxy).
-		if (pb.IP.To4() != nil) != (pb.HostIP.To4() != nil) {
-			continue
-		}
-		var daddrMatch string
-		if !pb.HostIP.IsUnspecified() {
-			daddrMatch = fmt.Sprintf("%s daddr %s ", pbc.table.Family(), pb.HostIP)
-		}
-		rule := fmt.Sprintf("%s%s%s%s dport %d counter dnat to %s comment DNAT",
-			proxySkip, v6LLSkip, daddrMatch, pb.Proto, pb.HostPort,
-			net.JoinHostPort(pb.IP.String(), strconv.Itoa(int(pb.Port))))
-		if err := updater(ctx, initialRuleGroup, rule); err != nil {
-			return fmt.Errorf("adding DNAT for %s %s:%d -> %s:%d/%s on %s: %w",
-				pbc.table.Family(), pb.HostIP, pb.HostPort, pb.IP, pb.Port, pb.Proto, n.config.IfName, err)
-		}
+	if !pb.HostIP.IsUnspecified() {
+		r.Writef("%s daddr %s", fam, pb.HostIP)
 	}
-	return nil
+	r.Writef("%s dport %d counter dnat to %s comment DNAT", pb.Proto, pb.HostPort, net.JoinHostPort(pb.IP.String(), strconv.Itoa(int(pb.Port))))
+
+	return rb.Rules()
 }
 
 // setPerPortHairpinMasq allows containers to access their own published ports on the host
 // when hairpin is enabled (no docker-proxy), by masquerading.
-func (n *network) setPerPortHairpinMasq(ctx context.Context, pbs []types.PortBinding, pbc pbContext, enable bool) error {
-	if !n.fw.config.Hairpin {
-		return nil
-	}
-	updater := pbc.table.ChainUpdateFunc(ctx, chainNatPostRtIn(n.config.IfName), enable)
-	for _, pb := range pbs {
-		// Nothing to do if NAT is disabled.
-		if pb.HostPort == 0 {
-			continue
-		}
-		// If the binding is between containerV4 and hostV6, NAT isn't possible (it's
-		// handled by docker-proxy).
-		if (pb.IP.To4() != nil) != (pb.HostIP.To4() != nil) {
-			continue
-		}
-		// When more than one host port is mapped to a single container port, this will
-		// generate the same rule for each host port. So, ignore duplicates when adding,
-		// and missing rules when removing. (No ref-counting is currently needed because
-		// when bindings are added or removed for an endpoint, they're all added or
-		// removed. So, a rule that's added more than once will also be deleted more
-		// than once.)
-		//
-		// TODO(robmry) - track port mappings, use that to edit nftables sets when bindings are added/removed.
-		rule := fmt.Sprintf(`%s saddr %s %s daddr %s %s dport %d counter masquerade comment "MASQ TO OWN PORT"`,
-			pbc.table.Family(), pb.IP, pbc.table.Family(), pb.IP, pb.Proto, pb.Port)
-		if err := updater(ctx, initialRuleGroup, rule); err != nil &&
-			!errors.Is(err, nftables.ErrRuleExist) && !errors.Is(err, nftables.ErrRuleNotExist) {
-			return fmt.Errorf("adding MASQ TO OWN PORT for %d -> %s:%d/%s: %w",
-				pb.Port, pb.IP, pb.Port, pb.Proto, err)
-		}
-	}
-	return nil
+func (n *network) setPerPortHairpinMasq(fam nftables.Family, pb types.PortBinding) []nftables.Rule {
+	var rb nftables.RulesBuilder
+	// When more than one host port is mapped to a single container port, this will
+	// generate the same rule for each host port. So, ignore duplicates when adding,
+	// and missing rules when removing. (No ref-counting is currently needed because
+	// when bindings are added or removed for an endpoint, they're all added or
+	// removed. So, a rule that's added more than once will also be deleted more
+	// than once.)
+	//
+	// TODO(robmry) - track port mappings, use that to edit nftables sets when bindings are added/removed.
+	rb.AddRule(nftables.Rule{
+		Chain: chainNatPostRtIn(n.config.IfName),
+		Group: initialRuleGroup,
+		Expr: fmt.Sprintf(
+			`%s saddr %s %s daddr %s %s dport %d counter masquerade comment "MASQ TO OWN PORT"`,
+			fam, pb.IP, fam, pb.IP, pb.Proto, pb.Port),
+	})
+
+	return rb.Rules()
 }
 
 // filterPortMappedOnLoopback adds a rule that drops remote connections to ports
@@ -185,33 +164,27 @@ func (n *network) setPerPortHairpinMasq(ctx context.Context, pbs []types.PortBin
 // This is a no-op if the portBinding is for IPv6 (IPv6 loopback address is
 // non-routable), or over a network with gw_mode=routed (PBs in routed mode
 // don't map ports on the host).
-func filterPortMappedOnLoopback(ctx context.Context, pbs []types.PortBinding, pbc pbContext, wsl2Mirrored, enable bool) error {
-	if pbc.ipv == firewaller.IPv6 {
-		return nil
-	}
-	updater := pbc.table.ChainUpdateFunc(ctx, rawPreroutingChain, enable)
-	for _, pb := range pbs {
-		// Nothing to do if not binding to the loopback address.
-		if pb.HostPort == 0 || !pb.HostIP.IsLoopback() {
-			continue
-		}
-		// Mappings from host IPv6 to container IPv4 are handled by docker-proxy.
-		if pb.HostIP.To4() == nil {
-			continue
-		}
-		if wsl2Mirrored {
-			if err := updater(ctx, rawPreroutingPortsRuleGroup,
-				`iifname loopback0 ip daddr %s %s dport %d counter accept comment "%s"`,
-				pb.HostIP, pb.Proto, pb.HostPort, "ACCEPT WSL2 LOOPBACK"); err != nil {
-				return fmt.Errorf("adding WSL2 loopback rule for %d: %w", pb.HostPort, err)
-			}
-		}
-		if err := updater(ctx, rawPreroutingPortsRuleGroup,
-			`iifname != lo ip daddr %s %s dport %d counter drop comment "DROP REMOTE LOOPBACK"`,
-			pb.HostIP, pb.Proto, pb.HostPort); err != nil {
-			return fmt.Errorf("adding loopback filter rule for %d: %w", pb.HostPort, err)
-		}
+func (n *network) filterPortMappedOnLoopback(pb types.PortBinding) []nftables.Rule {
+	var rb nftables.RulesBuilder
+	if n.fw.config.WSL2Mirrored {
+		rb.AddRule(nftables.Rule{
+			Chain: rawPreroutingChain,
+			Group: rawPreroutingPortsRuleGroup,
+			Expr: fmt.Sprintf(
+				`iifname loopback0 ip daddr %s %s dport %d counter accept comment "ACCEPT WSL2 LOOPBACK"`,
+				pb.HostIP, pb.Proto, pb.HostPort,
+			),
+		})
 	}
 
-	return nil
+	rb.AddRule(nftables.Rule{
+		Chain: rawPreroutingChain,
+		Group: rawPreroutingPortsRuleGroup,
+		Expr: fmt.Sprintf(
+			`iifname != lo ip daddr %s %s dport %d counter drop comment "DROP REMOTE LOOPBACK"`,
+			pb.HostIP, pb.Proto, pb.HostPort,
+		),
+	})
+
+	return rb.Rules()
 }
