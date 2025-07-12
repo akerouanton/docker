@@ -255,6 +255,9 @@ func validatePlatformConfig(conf *Config) error {
 	if err := validateFwMarkMask(conf.BridgeAcceptFwMark); err != nil {
 		return errors.Wrap(err, "invalid bridge-accept-fwmark")
 	}
+	if err := validateDefaultPortMapper(conf.DefaultPortMapper, conf.Rootless); err != nil {
+		return errors.Wrap(err, "invalid default-port-mapper")
+	}
 	return verifyDefaultCgroupNsMode(conf.CgroupNamespaceMode)
 }
 
@@ -326,6 +329,16 @@ func validateFwMarkMask(val string) error {
 		if _, err := strconv.ParseUint(mask, 0, 32); err != nil {
 			return fmt.Errorf("invalid firewall mask %q: %w", val, err)
 		}
+	}
+	return nil
+}
+
+func validateDefaultPortMapper(val string, rootless bool) error {
+	if val == "" {
+		return nil
+	}
+	if val == "proxy" && rootless {
+		return errors.New("proxy mapper is not compatible with rootless mode")
 	}
 	return nil
 }
