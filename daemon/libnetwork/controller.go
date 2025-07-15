@@ -177,7 +177,7 @@ func New(ctx context.Context, cfgOptions ...config.Option) (_ *Controller, retEr
 	// Register portmappers before network drivers to make sure they can
 	// restore existing sandboxes (with port mappings) during their
 	// initialization, if the daemon is started in live restore mode.
-	if err := registerPortMappers(ctx, &c.pmRegistry, c.cfg); err != nil {
+	if err := registerPortMappers(ctx, &c.pmRegistry, c.cfg.PluginGetter, c.cfg); err != nil {
 		return nil, err
 	}
 

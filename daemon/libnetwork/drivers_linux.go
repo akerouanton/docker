@@ -16,7 +16,9 @@ import (
 	"github.com/moby/moby/v2/daemon/libnetwork/drvregistry"
 	"github.com/moby/moby/v2/daemon/libnetwork/internal/rlkclient"
 	"github.com/moby/moby/v2/daemon/libnetwork/portmappers/nat"
+	"github.com/moby/moby/v2/daemon/libnetwork/portmappers/remote"
 	"github.com/moby/moby/v2/daemon/libnetwork/portmappers/routed"
+	"github.com/moby/moby/v2/pkg/plugingetter"
 )
 
 func registerNetworkDrivers(r driverapi.Registerer, store *datastore.Store, pms *drvregistry.PortMappers, driverConfig func(string) map[string]any) error {
@@ -47,7 +49,7 @@ func registerNetworkDrivers(r driverapi.Registerer, store *datastore.Store, pms 
 	return nil
 }
 
-func registerPortMappers(ctx context.Context, r *drvregistry.PortMappers, cfg *config.Config) error {
+func registerPortMappers(ctx context.Context, r *drvregistry.PortMappers, pg plugingetter.PluginGetter, cfg *config.Config) error {
 	var pdc *rlkclient.PortDriverClient
 	if cfg.Rootless {
 		var err error
@@ -63,6 +65,10 @@ func registerPortMappers(ctx context.Context, r *drvregistry.PortMappers, cfg *c
 
 	if err := routed.Register(r); err != nil {
 		return fmt.Errorf("registering routed portmapper: %w", err)
+	}
+
+	if err := remote.Register(r, pg); err != nil {
+		return fmt.Errorf("registering remote portmappers: %w", err)
 	}
 
 	return nil
