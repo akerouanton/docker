@@ -47,7 +47,7 @@ func NewPortMapper(cfg Config) PortMapper {
 // MapPorts allocates and binds host ports for the given cfg. The caller is
 // responsible for ensuring that all entries in cfg have the same proto,
 // container port, and host port range (their host addresses must differ).
-func (pm PortMapper) MapPorts(ctx context.Context, cfg []portmapperapi.PortBindingReq) (_ []portmapperapi.PortBinding, retErr error) {
+func (pm PortMapper) MapPorts(ctx context.Context, cfg []portmapperapi.PortBindingReq, labels map[string]string) (_ []portmapperapi.PortBinding, retErr error) {
 	if len(cfg) == 0 {
 		return nil, nil
 	}
@@ -64,7 +64,7 @@ func (pm PortMapper) MapPorts(ctx context.Context, cfg []portmapperapi.PortBindi
 	bindings := make([]portmapperapi.PortBinding, 0, len(cfg))
 	defer func() {
 		if retErr != nil {
-			if err := pm.UnmapPorts(ctx, bindings); err != nil {
+			if err := pm.UnmapPorts(ctx, bindings, labels); err != nil {
 				log.G(ctx).WithFields(log.Fields{
 					"pbs":   bindings,
 					"error": err,
@@ -107,7 +107,7 @@ func (pm PortMapper) MapPorts(ctx context.Context, cfg []portmapperapi.PortBindi
 	return bindings, nil
 }
 
-func (pm PortMapper) UnmapPorts(ctx context.Context, pbs []portmapperapi.PortBinding) error {
+func (pm PortMapper) UnmapPorts(ctx context.Context, pbs []portmapperapi.PortBinding, _ map[string]string) error {
 	var errs []error
 	for _, pb := range pbs {
 		if pb.BoundSocket != nil {

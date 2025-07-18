@@ -61,6 +61,7 @@ func TestPortMappingConfig(t *testing.T) {
 
 	sbOptions := make(map[string]any)
 	sbOptions[netlabel.PortMap] = portBindings
+	sbOptions[netlabel.Labels] = map[string]string{"foo": "bar"}
 
 	netOptions := map[string]any{
 		netlabel.GenericData: &networkConfiguration{
@@ -88,6 +89,8 @@ func TestPortMappingConfig(t *testing.T) {
 	if err = d.ProgramExternalConnectivity(context.Background(), "dummy", "ep1", "ep1", ""); err != nil {
 		t.Fatalf("Failed to program external connectivity: %v", err)
 	}
+
+	assert.DeepEqual(t, pm.sbLabels, map[string]string{"foo": "bar"})
 
 	network, ok := d.networks["dummy"]
 	if !ok {
@@ -824,10 +827,11 @@ func TestAddPortMappings(t *testing.T) {
 			})
 
 			ep := &bridgeEndpoint{
-				id:     "dummyep",
-				nid:    "dummynetwork",
-				addr:   tc.epAddrV4,
-				addrv6: tc.epAddrV6,
+				id:            "dummyep",
+				nid:           "dummynetwork",
+				addr:          tc.epAddrV4,
+				addrv6:        tc.epAddrV6,
+				extConnConfig: &connectivityConfiguration{},
 			}
 			pbm := portBindingMode{routed: true}
 			if ep.addr != nil {
@@ -883,7 +887,10 @@ func TestAddPortMappings(t *testing.T) {
 			}
 
 			// Release anything that was allocated.
-			err = n.releasePorts(&bridgeEndpoint{portMapping: pbs})
+			err = n.releasePorts(&bridgeEndpoint{
+				portMapping:   pbs,
+				extConnConfig: &connectivityConfiguration{},
+			})
 			if tc.expReleaseErr == "" {
 				assert.Check(t, err)
 			} else {
@@ -990,11 +997,12 @@ func (c *mockPortDriverClient) AddPort(_ context.Context, proto string, hostIP, 
 }
 
 type stubPortMapper struct {
-	reqs   [][]portmapperapi.PortBindingReq
-	mapped []portmapperapi.PortBinding
+	reqs     [][]portmapperapi.PortBindingReq
+	mapped   []portmapperapi.PortBinding
+	sbLabels map[string]string
 }
 
-func (pm *stubPortMapper) MapPorts(_ context.Context, reqs []portmapperapi.PortBindingReq) ([]portmapperapi.PortBinding, error) {
+func (pm *stubPortMapper) MapPorts(_ context.Context, reqs []portmapperapi.PortBindingReq, labels map[string]string) ([]portmapperapi.PortBinding, error) {
 	if len(reqs) == 0 {
 		return []portmapperapi.PortBinding{}, nil
 	}
@@ -1003,10 +1011,11 @@ func (pm *stubPortMapper) MapPorts(_ context.Context, reqs []portmapperapi.PortB
 		return portmapperapi.PortBinding{PortBinding: req.PortBinding}
 	})
 	pm.mapped = append(pm.mapped, pbs...)
+	pm.sbLabels = labels
 	return pbs, nil
 }
 
-func (pm *stubPortMapper) UnmapPorts(_ context.Context, reqs []portmapperapi.PortBinding) error {
+func (pm *stubPortMapper) UnmapPorts(_ context.Context, reqs []portmapperapi.PortBinding, _ map[string]string) error {
 	for _, req := range reqs {
 		// We're only checking for the PortBinding here, not any other
 		// property of [portmapperapi.PortBinding].

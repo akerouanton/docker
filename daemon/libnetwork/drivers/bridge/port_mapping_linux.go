@@ -49,7 +49,7 @@ func (n *bridgeNetwork) addPortMappings(
 	bindings := make([]portmapperapi.PortBinding, 0, len(cfg)*2)
 	defer func() {
 		if retErr != nil {
-			if err := n.unmapPBs(ctx, bindings); err != nil {
+			if err := n.unmapPBs(ctx, bindings, ep.extConnConfig.Labels); err != nil {
 				log.G(ctx).WithFields(log.Fields{
 					"bindings": bindings,
 					"error":    err,
@@ -79,7 +79,7 @@ func (n *bridgeNetwork) addPortMappings(
 			continue
 		}
 
-		newB, err := n.mapPorts(ctx, pms, toBind)
+		newB, err := n.mapPorts(ctx, pms, toBind, ep.extConnConfig.Labels)
 		if err != nil {
 			return nil, err
 		}
@@ -95,20 +95,25 @@ func (n *bridgeNetwork) addPortMappings(
 // mapPorts calls the port mapper used to map the ports in reqs, applies the firewall rules requested by that
 // portmapper, and starts userland proxies if required. Caller must ensure that reqs is non-empty and all requests have
 // the same Mapper set. It returns an error if it fails on any of these steps, and rolls back any changes it made.
-func (n *bridgeNetwork) mapPorts(ctx context.Context, pms *drvregistry.PortMappers, reqs []portmapperapi.PortBindingReq) (_ []portmapperapi.PortBinding, retErr error) {
+func (n *bridgeNetwork) mapPorts(
+	ctx context.Context,
+	pms *drvregistry.PortMappers,
+	reqs []portmapperapi.PortBindingReq,
+	labels map[string]string,
+) (_ []portmapperapi.PortBinding, retErr error) {
 	mapper := reqs[0].Mapper
 	pm, err := pms.Get(mapper)
 	if err != nil {
 		return nil, err
 	}
 
-	bindings, err := pm.MapPorts(ctx, reqs)
+	bindings, err := pm.MapPorts(ctx, reqs, labels)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if retErr != nil {
-			if err := pm.UnmapPorts(ctx, bindings); err != nil {
+			if err := pm.UnmapPorts(ctx, bindings, labels); err != nil {
 				log.G(ctx).WithFields(log.Fields{
 					"bindings": bindings,
 					"error":    err,
@@ -428,10 +433,10 @@ func (n *bridgeNetwork) releasePorts(ep *bridgeEndpoint) error {
 	ep.portBindingState = portBindingMode{}
 	n.Unlock()
 
-	return n.unmapPBs(context.TODO(), pbs)
+	return n.unmapPBs(context.TODO(), pbs, ep.extConnConfig.Labels)
 }
 
-func (n *bridgeNetwork) unmapPBs(ctx context.Context, bindings []portmapperapi.PortBinding) error {
+func (n *bridgeNetwork) unmapPBs(ctx context.Context, bindings []portmapperapi.PortBinding, labels map[string]string) error {
 	pms := n.portMappers()
 
 	var errs []error
@@ -442,7 +447,7 @@ func (n *bridgeNetwork) unmapPBs(ctx context.Context, bindings []portmapperapi.P
 			continue
 		}
 
-		if err := pm.UnmapPorts(ctx, []portmapperapi.PortBinding{b}); err != nil {
+		if err := pm.UnmapPorts(ctx, []portmapperapi.PortBinding{b}, labels); err != nil {
 			errs = append(errs, fmt.Errorf("unmapping port binding %s: %w", b.PortBinding, err))
 		}
 		if b.StopProxy != nil {

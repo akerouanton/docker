@@ -21,6 +21,7 @@ import (
 func TestMapUnmapPorts(t *testing.T) {
 	testcases := []struct {
 		name   string
+		labels map[string]string
 		pbReqs []portmapperapi.PortBindingReq
 
 		mapHTTPStatus int  // HTTP status code returned by the stub plugin when MapPorts is called
@@ -33,7 +34,8 @@ func TestMapUnmapPorts(t *testing.T) {
 		expUnmapReq UnmapPortsRequest // Requests sent to the stub plugin by the remote portmapper to unmap ports
 	}{
 		{
-			name: "valid request",
+			name:   "valid request",
+			labels: map[string]string{"foo": "bar"},
 			pbReqs: []portmapperapi.PortBindingReq{
 				{PortBinding: types.PortBinding{Proto: types.TCP, IP: net.ParseIP("172.17.0.3"), Port: 80, HostIP: net.IPv4zero, HostPort: 80, HostPortEnd: 82}},
 				{PortBinding: types.PortBinding{Proto: types.TCP, IP: net.ParseIP("fd33:8c66:7f44::3"), Port: 80, HostIP: net.IPv6zero, HostPort: 80, HostPortEnd: 82}},
@@ -43,6 +45,7 @@ func TestMapUnmapPorts(t *testing.T) {
 					{Proto: types.TCP, BackendIP: netip.MustParseAddr("172.17.0.3"), BackendPort: 80, FrontendIP: netip.IPv4Unspecified(), FrontendPort: 80, FrontendPortEnd: 82},
 					{Proto: types.TCP, BackendIP: netip.MustParseAddr("fd33:8c66:7f44::3"), BackendPort: 80, FrontendIP: netip.IPv6Unspecified(), FrontendPort: 80, FrontendPortEnd: 82},
 				},
+				Labels: map[string]string{"foo": "bar"},
 			},
 			expPBs: []portmapperapi.PortBinding{
 				{PortBinding: types.PortBinding{Proto: types.TCP, IP: net.ParseIP("172.17.0.3"), Port: 80, HostIP: net.IPv4zero, HostPort: 80, HostPortEnd: 80}},
@@ -53,6 +56,7 @@ func TestMapUnmapPorts(t *testing.T) {
 					{Proto: types.TCP, BackendIP: netip.MustParseAddr("172.17.0.3"), BackendPort: 80, FrontendIP: netip.IPv4Unspecified(), FrontendPort: 80},
 					{Proto: types.TCP, BackendIP: netip.MustParseAddr("fd33:8c66:7f44::3"), BackendPort: 80, FrontendIP: netip.IPv6Unspecified(), FrontendPort: 80},
 				},
+				Labels: map[string]string{"foo": "bar"},
 			},
 		},
 		{
@@ -101,7 +105,7 @@ func TestMapUnmapPorts(t *testing.T) {
 			assert.NilError(t, err)
 			pm := newPortMapper("test-mapper", c)
 
-			pbs, err := pm.MapPorts(context.Background(), tc.pbReqs)
+			pbs, err := pm.MapPorts(context.Background(), tc.pbReqs, tc.labels)
 			assert.DeepEqual(t, tc.expMapReq, p.mapReq, cmpopts.EquateComparable(netip.Addr{}))
 			assert.DeepEqual(t, tc.expPBs, pbs, cmpopts.EquateComparable(netip.AddrPort{}))
 			if tc.expMapErr != "" {
@@ -109,7 +113,7 @@ func TestMapUnmapPorts(t *testing.T) {
 				return
 			}
 
-			err = pm.UnmapPorts(context.Background(), tc.expPBs)
+			err = pm.UnmapPorts(context.Background(), tc.expPBs, tc.labels)
 			assert.DeepEqual(t, tc.expUnmapReq, p.unmapReq, cmpopts.EquateComparable(netip.Addr{}))
 			assert.NilError(t, err)
 		})

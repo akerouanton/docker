@@ -12,6 +12,10 @@ type MapPortsRequest struct {
 	// when an ephemeral port, or a port range is requested. Each Reqs should
 	// yield an independent PortBinding.
 	Reqs []PortBindingReq
+
+	// Labels is a set of opaque, user-specified freeform labels that can be
+	// used to tweak how the port-mapper behaves.
+	Labels map[string]string
 }
 
 type PortBindingReq struct {
@@ -67,4 +71,5 @@ type PortBinding struct {
 
 type UnmapPortsRequest struct {
 	PortBindings []PortBinding
+	Labels       map[string]string
 }

@@ -1,6 +1,7 @@
 package libnetwork
 
 import (
+	"maps"
 	"net/netip"
 
 	"github.com/moby/moby/v2/daemon/libnetwork/netlabel"
@@ -131,6 +132,20 @@ func OptionPortMapping(portBindings []types.PortBinding) SandboxOption {
 		pbs := make([]types.PortBinding, len(portBindings))
 		copy(pbs, portBindings)
 		sb.config.generic[netlabel.PortMap] = pbs
+	}
+}
+
+// OptionLabels returns an option setter associating opaque, free-form labels
+// with the sandbox.
+func OptionLabels(labels map[string]string) SandboxOption {
+	return func(sb *Sandbox) {
+		if sb.config.generic == nil {
+			sb.config.generic = make(map[string]any)
+		}
+		labelsCopy := make(map[string]string, len(labels))
+		maps.Copy(labelsCopy, labels)
+		// Store a copy of the labels as generic data to pass to the driver
+		sb.config.generic[netlabel.Labels] = labelsCopy
 	}
 }
 

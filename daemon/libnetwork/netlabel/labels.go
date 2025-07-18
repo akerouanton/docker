@@ -72,6 +72,10 @@ const (
 	// container, when the default binding address is 0.0.0.0. This label
 	// is intended for internal use, it may be removed in a future release.
 	NoProxy6To4 = DriverPrivatePrefix + ".no_proxy_6to4"
+
+	// Labels is a label used to set labels on sandboxes to be consumed by
+	// portmapper plugins.
+	Labels = Prefix + ".labels"
 )
 
 // GetIfname returns the value associated to the Ifname netlabel from the

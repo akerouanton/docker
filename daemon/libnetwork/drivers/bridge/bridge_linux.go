@@ -128,6 +128,7 @@ type containerConfiguration struct {
 type connectivityConfiguration struct {
 	PortBindings []portmapperapi.PortBindingReq
 	ExposedPorts []types.TransportPort
+	Labels       map[string]string
 	NoProxy6To4  bool
 }
 
@@ -1625,7 +1626,7 @@ func (ep *bridgeEndpoint) trimPortBindings(ctx context.Context, n *bridgeNetwork
 		return nil, nil
 	}
 
-	if err := n.unmapPBs(ctx, toDrop); err != nil {
+	if err := n.unmapPBs(ctx, toDrop, ep.extConnConfig.Labels); err != nil {
 		log.G(ctx).WithFields(log.Fields{
 			"error": err,
 			"gw4":   pbmReq.ipv4,
@@ -1907,6 +1908,14 @@ func parseConnectivityOptions(cOptions map[string]any) (*connectivityConfigurati
 			cc.ExposedPorts = ports
 		} else {
 			return nil, types.InvalidParameterErrorf("invalid exposed ports data in connectivity configuration: %v", opt)
+		}
+	}
+
+	if opt, ok := cOptions[netlabel.Labels]; ok {
+		if labels, ok := opt.(map[string]string); ok {
+			cc.Labels = labels
+		} else {
+			return nil, types.InvalidParameterErrorf("invalid container labels data in connectivity configuration: %v", opt)
 		}
 	}
 

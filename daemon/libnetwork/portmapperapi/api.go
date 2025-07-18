@@ -29,10 +29,10 @@ type PortMapper interface {
 	// When an ephemeral port, or a single port from a range is requested
 	// MapPorts should attempt a few times to find a free port available
 	// across all IP addresses.
-	MapPorts(ctx context.Context, reqs []PortBindingReq) ([]PortBinding, error)
+	MapPorts(ctx context.Context, reqs []PortBindingReq, labels map[string]string) ([]PortBinding, error)
 
 	// UnmapPorts takes a list of port bindings to unmap.
-	UnmapPorts(ctx context.Context, pbs []PortBinding) error
+	UnmapPorts(ctx context.Context, pbs []PortBinding, labels map[string]string) error
 }
 
 type PortBindingReq struct {

@@ -76,7 +76,7 @@ func makePluginClient(p plugingetter.CompatPlugin) (*plugins.Client, error) {
 	return client, nil
 }
 
-func (pm *portMapper) MapPorts(ctx context.Context, reqs []portmapperapi.PortBindingReq) ([]portmapperapi.PortBinding, error) {
+func (pm *portMapper) MapPorts(ctx context.Context, reqs []portmapperapi.PortBindingReq, labels map[string]string) ([]portmapperapi.PortBinding, error) {
 	if len(reqs) == 0 {
 		return nil, nil
 	}
@@ -95,6 +95,7 @@ func (pm *portMapper) MapPorts(ctx context.Context, reqs []portmapperapi.PortBin
 				FrontendPortEnd: pbReq.HostPortEnd,
 			}
 		}),
+		Labels: labels,
 	}
 
 	var resp MapPortsResponse
@@ -132,7 +133,7 @@ func (pm *portMapper) MapPorts(ctx context.Context, reqs []portmapperapi.PortBin
 	return pbs, nil
 }
 
-func (pm *portMapper) UnmapPorts(ctx context.Context, pbs []portmapperapi.PortBinding) error {
+func (pm *portMapper) UnmapPorts(ctx context.Context, pbs []portmapperapi.PortBinding, labels map[string]string) error {
 	req := UnmapPortsRequest{
 		PortBindings: sliceutil.Map(pbs, func(pb portmapperapi.PortBinding) PortBinding {
 			backendIP, _ := netip.AddrFromSlice(pb.IP)
@@ -146,6 +147,7 @@ func (pm *portMapper) UnmapPorts(ctx context.Context, pbs []portmapperapi.PortBi
 				FrontendPort: pb.HostPort,
 			}
 		}),
+		Labels: labels,
 	}
 
 	if err := pm.client.CallWithOptions(UmnapPortsEndpoint, req, nil); err != nil {
