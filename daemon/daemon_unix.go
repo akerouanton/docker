@@ -930,6 +930,7 @@ func networkPlatformOptions(conf *config.Config) []nwconfig.Option {
 	return []nwconfig.Option{
 		nwconfig.OptionRootless(conf.Rootless),
 		nwconfig.OptionUserlandProxy(conf.EnableUserlandProxy, conf.UserlandProxyPath),
+		nwconfig.OptionDefaultPortMapper(conf.DefaultPortMapper),
 		nwconfig.OptionDriverConfig("bridge", options.Generic{
 			netlabel.GenericData: options.Generic{
 				"EnableIPForwarding":       conf.BridgeConfig.EnableIPForward,

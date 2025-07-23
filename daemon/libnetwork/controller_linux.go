@@ -31,6 +31,10 @@ func (c *Controller) FirewallBackend() *system.FirewallInfo {
 	return &info
 }
 
+func (c *Controller) DefaultPortMapper() string {
+	return c.Config().DefaultPortMapper
+}
+
 // enabledIptablesVersions returns the iptables versions that are enabled
 // for the controller.
 func (c *Controller) enabledIptablesVersions() []iptables.IPVersion {

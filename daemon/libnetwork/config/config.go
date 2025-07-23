@@ -46,6 +46,7 @@ type Config struct {
 	Rootless               bool
 	EnableUserlandProxy    bool
 	UserlandProxyPath      string
+	DefaultPortMapper      string
 }
 
 // New creates a new Config and initializes it with the given Options.
@@ -180,5 +181,11 @@ func OptionUserlandProxy(enabled bool, proxyPath string) Option {
 	return func(c *Config) {
 		c.EnableUserlandProxy = enabled
 		c.UserlandProxyPath = proxyPath
+	}
+}
+
+func OptionDefaultPortMapper(portMapper string) Option {
+	return func(c *Config) {
+		c.DefaultPortMapper = portMapper
 	}
 }
