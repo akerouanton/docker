@@ -33,6 +33,13 @@ keywords: "API, Docker, rcli, REST, documentation"
   ignored by the daemon. Omit a field or set it to `null` to leave the current
   per-device rules unchanged. Set it to an empty array to clear the current
   per-device rules for that resource type.
+* Port bindings specified in `POST /containers/create` and returned in
+  `GET /containers/{id}/json` now take two new fields: `Mapper` and `ExtraParams`.
+  The `Mapper` field is a string indicating the port mapper used to create the
+  port binding, and the `ExtraParams` field is a map of additional parameters
+  passed to the mapper.
+  WARNING: These fields are experimental and may change at any time without any
+  backward compatibility.
 
 ## v1.54 API changes
 
