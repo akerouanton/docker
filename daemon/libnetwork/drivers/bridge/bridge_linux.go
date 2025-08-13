@@ -23,6 +23,7 @@ import (
 	"github.com/moby/moby/v2/daemon/libnetwork/drivers/bridge/internal/iptabler"
 	"github.com/moby/moby/v2/daemon/libnetwork/drivers/bridge/internal/nftabler"
 	"github.com/moby/moby/v2/daemon/libnetwork/drvregistry"
+	"github.com/moby/moby/v2/daemon/libnetwork/internal/maputil"
 	"github.com/moby/moby/v2/daemon/libnetwork/internal/nftables"
 	"github.com/moby/moby/v2/daemon/libnetwork/iptables"
 	"github.com/moby/moby/v2/daemon/libnetwork/netlabel"
@@ -1902,6 +1903,10 @@ func parseConnectivityOptions(cOptions map[string]any) (*connectivityConfigurati
 			cc.PortBindings = sliceutil.Map(pbs, func(pb types.PortBinding) portmapperapi.PortBindingReq {
 				return portmapperapi.PortBindingReq{
 					PortBinding: pb.Copy(),
+					Mapper:      pb.Mapper,
+					ExtraParams: maputil.Map(pb.ExtraParams, func(k string, v string) (string, any) {
+						return k, v
+					}),
 				}
 			})
 		} else {
