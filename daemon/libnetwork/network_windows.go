@@ -18,7 +18,6 @@ import (
 	"github.com/moby/moby/v2/daemon/libnetwork/drivers/windows"
 	winlibnetwork "github.com/moby/moby/v2/daemon/libnetwork/drivers/windows"
 	"github.com/moby/moby/v2/daemon/libnetwork/ipams/defaultipam"
-	"github.com/moby/moby/v2/daemon/libnetwork/ipams/windowsipam"
 	"github.com/moby/moby/v2/daemon/libnetwork/netlabel"
 	networkSettings "github.com/moby/moby/v2/daemon/network"
 	"github.com/pkg/errors"
@@ -274,7 +273,7 @@ func findResolver(resolvers []*Resolver, gw4, gw6 string) *Resolver {
 
 func defaultIpamForNetworkType(networkType string) string {
 	if windows.IsBuiltinLocalDriver(networkType) {
-		return windowsipam.DefaultIPAM
+		return defaultipam.DriverName
 	}
 	return defaultipam.DriverName
 }
