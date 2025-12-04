@@ -10,7 +10,7 @@ import (
 )
 
 func TestRequestNewPort(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4zero, "tcp", 0)
 	if err != nil {
@@ -23,7 +23,7 @@ func TestRequestNewPort(t *testing.T) {
 }
 
 func TestRequestSpecificPort(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4zero, "tcp", 5000)
 	if err != nil {
@@ -36,7 +36,7 @@ func TestRequestSpecificPort(t *testing.T) {
 }
 
 func TestReleasePort(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4zero, "tcp", 5000)
 	if err != nil {
@@ -50,7 +50,7 @@ func TestReleasePort(t *testing.T) {
 }
 
 func TestReuseReleasedPort(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4zero, "tcp", 5000)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestReuseReleasedPort(t *testing.T) {
 }
 
 func TestReleaseUnreadledPort(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4zero, "tcp", 5000)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestReleaseUnreadledPort(t *testing.T) {
 }
 
 func TestUnknowProtocol(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	if _, err := p.RequestPort(net.IPv4zero, "tcpp", 0); !errors.Is(err, errUnknownProtocol) {
 		t.Fatalf("Expected error %s got %s", errUnknownProtocol, err)
@@ -99,7 +99,7 @@ func TestUnknowProtocol(t *testing.T) {
 }
 
 func TestAllocateAllPorts(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	for i := 0; i <= p.end-p.begin; i++ {
 		port, err := p.RequestPort(net.IPv4zero, "tcp", 0)
@@ -145,7 +145,7 @@ func TestAllocateAllPorts(t *testing.T) {
 }
 
 func BenchmarkAllocatePorts(b *testing.B) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	for b.Loop() {
 		for i := 0; i <= p.end-p.begin; i++ {
@@ -163,7 +163,7 @@ func BenchmarkAllocatePorts(b *testing.B) {
 }
 
 func TestPortAllocation(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	ip := net.ParseIP("192.168.0.1")
 	ip2 := net.ParseIP("192.168.0.2")
@@ -222,7 +222,7 @@ func TestPortAllocation(t *testing.T) {
 }
 
 func TestPortAllocationWithCustomRange(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	start, end := 8081, 8082
 	specificPort := 8000
@@ -287,7 +287,7 @@ func TestPortAllocationWithCustomRange(t *testing.T) {
 }
 
 func TestNoDuplicateBPR(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	if port, err := p.RequestPort(net.IPv4zero, "tcp", p.begin); err != nil {
 		t.Fatal(err)
@@ -303,7 +303,7 @@ func TestNoDuplicateBPR(t *testing.T) {
 }
 
 func TestRequestPortForMultipleIPs(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	addrs := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::")}
 
@@ -346,7 +346,7 @@ func TestRequestPortForMultipleIPs(t *testing.T) {
 }
 
 func TestMixUnspecAndSpecificAddrs(t *testing.T) {
-	p := newInstance()
+	p := NewPortAllocator()
 
 	port, err := p.RequestPort(net.IPv4(127, 0, 0, 1), "udp", 0)
 	assert.Check(t, err)

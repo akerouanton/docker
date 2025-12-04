@@ -70,12 +70,12 @@ func GetPortRange() (start, end uint16) {
 func Get() *PortAllocator {
 	// Port Allocator is a singleton
 	once.Do(func() {
-		instance = newInstance()
+		instance = NewPortAllocator()
 	})
 	return instance
 }
 
-func newInstance() *PortAllocator {
+func NewPortAllocator() *PortAllocator {
 	begin, end := dynamicPortRange()
 	return &PortAllocator{
 		ipMap:     makeIpMapping(begin, end),

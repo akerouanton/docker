@@ -219,7 +219,7 @@ func TestOnlyOneSocketBindsUDPPort(t *testing.T) {
 	defer f.Close()
 
 	// Then try to allocate that port using the OSAllocator.
-	alloc := OSAllocator{allocator: newInstance()}
+	alloc := OSAllocator{allocator: NewPortAllocator()}
 	_, socks, err := alloc.RequestPortsInRange([]net.IP{addr.AsSlice()}, syscall.IPPROTO_UDP, port, port)
 	// In case RequestPortsInRange succeeded, close the sockets to not affect subsequent tests
 	defer closeSocks(t, socks)
