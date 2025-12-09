@@ -1014,7 +1014,7 @@ func (n *Network) delete(force bool, rmLBEndpoint bool) error {
 
 	// Only remove ingress on force removal or explicit LB endpoint removal
 	if n.ingress && !force && !rmLBEndpoint {
-		return &networkbackend.ActiveEndpointsError{name: n.name, id: n.id}
+		return networkbackend.NewActiveEndpointsError(n.name, n.id, nil)
 	}
 
 	if !force && n.configOnly {
@@ -1031,13 +1031,9 @@ func (n *Network) delete(force bool, rmLBEndpoint bool) error {
 	}
 	eps := c.findEndpoints(filterEndpointByNetworkId(n.id))
 	if !force && len(eps) > emptyCount {
-		return &networkbackend.ActiveEndpointsError{
-			name: n.name,
-			id:   n.id,
-			endpoints: sliceutil.Map(eps, func(ep *Endpoint) string {
-				return fmt.Sprintf(`name:%q id:%q`, ep.name, stringid.TruncateID(ep.id))
-			}),
-		}
+		return networkbackend.NewActiveEndpointsError(n.name, n.id, sliceutil.Map(eps, func(ep *Endpoint) string {
+			return fmt.Sprintf(`name:%q id:%q`, ep.name, stringid.TruncateID(ep.id))
+		}))
 	}
 
 	if n.hasLoadBalancerEndpoint() {
