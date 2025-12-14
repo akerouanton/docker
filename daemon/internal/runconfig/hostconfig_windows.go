@@ -1,8 +1,6 @@
 package runconfig
 
 import (
-	"fmt"
-
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/v2/pkg/sysinfo"
 )
@@ -15,16 +13,6 @@ func validateNetMode(c *container.Config, hc *container.HostConfig) error {
 	}
 	if hc.NetworkMode.IsContainer() && hc.Isolation.IsHyperV() {
 		return validationError("invalid network-mode: using the network stack of another container is not supported while using Hyper-V Containers")
-	}
-	return nil
-}
-
-// validateIsolation performs platform specific validation of the
-// isolation in the hostconfig structure. Windows supports 'default' (or
-// blank), 'process', or 'hyperv'.
-func validateIsolation(hc *container.HostConfig) error {
-	if !hc.Isolation.IsValid() {
-		return validationError(fmt.Sprintf("invalid isolation (%s): Windows supports 'default', 'process', or 'hyperv'", hc.Isolation))
 	}
 	return nil
 }

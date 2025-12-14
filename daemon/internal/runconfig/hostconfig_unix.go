@@ -26,16 +26,6 @@ func validateNetMode(c *container.Config, hc *container.HostConfig) error {
 	return nil
 }
 
-// validateIsolation performs platform specific validation of
-// isolation in the hostconfig structure. Linux only supports "default"
-// which is LXC container isolation
-func validateIsolation(hc *container.HostConfig) error {
-	if !hc.Isolation.IsValid() {
-		return validationError(fmt.Sprintf("invalid isolation (%s): %s only supports 'default'", hc.Isolation, runtime.GOOS))
-	}
-	return nil
-}
-
 // validateQoS performs platform specific validation of the QoS settings
 func validateQoS(hc *container.HostConfig) error {
 	if hc.IOMaximumBandwidth != 0 {

@@ -65,9 +65,6 @@ func validateCreateRequest(w container.CreateRequest, si *sysinfo.SysInfo) error
 	if err := validateNetMode(w.Config, w.HostConfig); err != nil {
 		return err
 	}
-	if err := validateIsolation(w.HostConfig); err != nil {
-		return err
-	}
 	if err := validateQoS(w.HostConfig); err != nil {
 		return err
 	}
