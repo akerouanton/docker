@@ -336,13 +336,13 @@ func (c *containerRouter) postContainersStop(ctx context.Context, w http.Respons
 	return nil
 }
 
-func (c *containerRouter) postContainersKill(_ context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+func (c *containerRouter) postContainersKill(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	if err := httputils.ParseForm(r); err != nil {
 		return err
 	}
 
 	name := vars["name"]
-	if err := c.backend.ContainerKill(name, r.Form.Get("signal")); err != nil {
+	if err := c.backend.ContainerKill(context.WithoutCancel(ctx), name, r.Form.Get("signal")); err != nil {
 		return errors.Wrapf(err, "cannot kill container: %s", name)
 	}
 
@@ -1095,7 +1095,7 @@ func (c *containerRouter) deleteContainers(ctx context.Context, w http.ResponseW
 		RemoveLink:   httputils.BoolValue(r, "link"),
 	}
 
-	if err := c.backend.ContainerRm(name, config); err != nil {
+	if err := c.backend.ContainerRm(context.WithoutCancel(ctx), name, config); err != nil {
 		return err
 	}
 

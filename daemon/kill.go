@@ -33,7 +33,7 @@ func (errNoSuchProcess) NotFound() {}
 // If no signal is given, then Kill with SIGKILL and wait
 // for the container to exit.
 // If a signal is given, then just send it to the container and return.
-func (daemon *Daemon) ContainerKill(name, stopSignal string) error {
+func (daemon *Daemon) ContainerKill(_ context.Context, name, stopSignal string) error {
 	var (
 		err error
 		sig = syscall.SIGKILL
