@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"net/netip"
-	"slices"
 
 	"github.com/moby/moby/v2/daemon/libnetwork/ipbits"
 )
@@ -47,12 +46,26 @@ func (n NetworkToSplit) Overlaps(p netip.Prefix) bool {
 
 // GetGlobalScopeDefaultNetworks returns a copy of the global-scope network list.
 func GetGlobalScopeDefaultNetworks() []*NetworkToSplit {
-	return slices.Clone(globalScopeDefaultNetworks)
+	nws := make([]*NetworkToSplit, len(globalScopeDefaultNetworks))
+	for i, nw := range globalScopeDefaultNetworks {
+		nws[i] = &NetworkToSplit{
+			Base: nw.Base,
+			Size: nw.Size,
+		}
+	}
+	return nws
 }
 
 // GetLocalScopeDefaultNetworks returns a copy of the default local-scope network list.
 func GetLocalScopeDefaultNetworks() []*NetworkToSplit {
-	return slices.Clone(localScopeDefaultNetworks)
+	nws := make([]*NetworkToSplit, len(localScopeDefaultNetworks))
+	for i, nw := range localScopeDefaultNetworks {
+		nws[i] = &NetworkToSplit{
+			Base: nw.Base,
+			Size: nw.Size,
+		}
+	}
+	return nws
 }
 
 // DeriveULABaseNetwork derives a Global ID from the provided hostID and
