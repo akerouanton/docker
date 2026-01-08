@@ -11,13 +11,13 @@ import (
 
 var (
 	localScopeDefaultNetworks = []*NetworkToSplit{
-		{netip.MustParsePrefix("172.17.0.0/16"), 16},
-		{netip.MustParsePrefix("172.18.0.0/16"), 16},
-		{netip.MustParsePrefix("172.19.0.0/16"), 16},
-		{netip.MustParsePrefix("172.20.0.0/14"), 16},
-		{netip.MustParsePrefix("172.24.0.0/14"), 16},
-		{netip.MustParsePrefix("172.28.0.0/14"), 16},
-		{netip.MustParsePrefix("192.168.0.0/16"), 20},
+		{netip.MustParsePrefix("172.17.0.0/16"), 24},
+		{netip.MustParsePrefix("172.18.0.0/16"), 24},
+		{netip.MustParsePrefix("172.19.0.0/16"), 24},
+		{netip.MustParsePrefix("172.20.0.0/14"), 24},
+		{netip.MustParsePrefix("172.24.0.0/14"), 24},
+		{netip.MustParsePrefix("172.28.0.0/14"), 24},
+		{netip.MustParsePrefix("192.168.0.0/16"), 24},
 	}
 	globalScopeDefaultNetworks = []*NetworkToSplit{
 		{netip.MustParsePrefix("10.0.0.0/8"), 24},
