@@ -239,8 +239,11 @@ func newPoolData(pool netip.Prefix) *PoolData {
 	// - IPv4 network address
 	//   - Except in a /31 point-to-point link, https://datatracker.ietf.org/doc/html/rfc3021
 	// - IPv6 Subnet-Router anycast address, https://datatracker.ietf.org/doc/html/rfc4291#section-2.6.1
+	//   - As a quick fix to allow the use of /127 subnets, skip reserving the subnet-router anycast address
+	//     if the subnet is /127. This is in contradiction with https://datatracker.ietf.org/doc/html/rfc6164#section-6
+	//   - To truly add support for /127 subnets, the subnet allocator should skip the first and last /127.1
 	bits := pool.Addr().BitLen() - pool.Bits()
-	if !pool.Addr().Is4() || bits > 1 {
+	if bits > 1 {
 		h.Add(pool.Addr())
 	}
 
