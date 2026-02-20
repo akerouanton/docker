@@ -33,18 +33,16 @@ func validateResources(hc *container.HostConfig, _ *sysinfo.SysInfo) error {
 	return nil
 }
 
-// validatePrivileged performs platform specific validation of the Privileged setting
-func validatePrivileged(hc *container.HostConfig) error {
-	if hc.Privileged {
-		return validationError("invalid option: privileged mode is not supported for Windows containers")
-	}
+// validatePrivileged performs platform specific validation of the Privileged setting.
+// docker-next always runs Linux containers in VMs regardless of host OS,
+// so Windows container restrictions do not apply.
+func validatePrivileged(_ *container.HostConfig) error {
 	return nil
 }
 
-// validateReadonlyRootfs performs platform specific validation of the ReadonlyRootfs setting
-func validateReadonlyRootfs(hc *container.HostConfig) error {
-	if hc.ReadonlyRootfs {
-		return validationError("invalid option: read-only mode is not supported for Windows containers")
-	}
+// validateReadonlyRootfs performs platform specific validation of the ReadonlyRootfs setting.
+// docker-next always runs Linux containers in VMs regardless of host OS,
+// so Windows container restrictions do not apply.
+func validateReadonlyRootfs(_ *container.HostConfig) error {
 	return nil
 }
