@@ -3,9 +3,9 @@
 package portallocator
 
 import (
-	"bytes"
 	"fmt"
-	"os/exec"
+
+	"golang.org/x/sys/unix"
 )
 
 func getDynamicPortRange() (start, end int, _ error) {
@@ -13,17 +13,11 @@ func getDynamicPortRange() (start, end int, _ error) {
 		"net.inet.ip.portrange.hifirst": &start,
 		"net.inet.ip.portrange.hilast":  &end,
 	} {
-		var buf bytes.Buffer
-		cmd := exec.Command("/usr/sbin/sysctl", sysctl)
-		cmd.Stdout = &buf
-		if err := cmd.Run(); err != nil {
+		v, err := unix.SysctlUint32(sysctl)
+		if err != nil {
 			return 0, 0, fmt.Errorf("port allocator - sysctl %s failed: %v", sysctl, err)
 		}
-
-		n, err := fmt.Sscanf(buf.String(), sysctl+": %d\n", val)
-		if err != nil || n != 1 {
-			return 0, 0, fmt.Errorf("failed to parse the output of sysctl %s: %v", sysctl, err)
-		}
+		*val = int(v)
 	}
 
 	return start, end, nil
