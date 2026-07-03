@@ -36,7 +36,7 @@ func (m *MockBackend) ContainerCreateIgnoreImagesArgsEscaped(ctx context.Context
 	return container.CreateResponse{}, nil
 }
 
-func (m *MockBackend) ContainerRm(name string, config *backend.ContainerRmConfig) error {
+func (m *MockBackend) ContainerRm(ctx context.Context, name string, config *backend.ContainerRmConfig) error {
 	return nil
 }
 

@@ -414,7 +414,7 @@ func (c *Cluster) Leave(ctx context.Context, force bool) error {
 			return err
 		}
 		for _, id := range nodeContainers {
-			if err := c.config.Backend.ContainerRm(id, &backend.ContainerRmConfig{ForceRemove: true}); err != nil {
+			if err := c.config.Backend.ContainerRm(ctx, id, &backend.ContainerRmConfig{ForceRemove: true}); err != nil {
 				log.G(ctx).Errorf("error removing %v: %v", id, err)
 			}
 		}

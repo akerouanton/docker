@@ -63,7 +63,7 @@ type ExecBackend interface {
 	// ContainerCreateIgnoreImagesArgsEscaped creates a new Docker container and returns potential warnings
 	ContainerCreateIgnoreImagesArgsEscaped(ctx context.Context, config backend.ContainerCreateConfig) (container.CreateResponse, error)
 	// ContainerRm removes a container specified by `id`.
-	ContainerRm(name string, config *backend.ContainerRmConfig) error
+	ContainerRm(ctx context.Context, name string, config *backend.ContainerRmConfig) error
 	// ContainerStart starts a new container
 	ContainerStart(ctx context.Context, containerID string, checkpoint string, checkpointDir string) error
 	// ContainerWait stops processing until the given container is stopped.

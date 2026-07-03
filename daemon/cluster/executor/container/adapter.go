@@ -440,7 +440,7 @@ func (c *containerAdapter) terminate(ctx context.Context) error {
 }
 
 func (c *containerAdapter) remove(ctx context.Context) error {
-	return c.backend.ContainerRm(c.container.name(), &backend.ContainerRmConfig{
+	return c.backend.ContainerRm(context.WithoutCancel(ctx), c.container.name(), &backend.ContainerRmConfig{
 		RemoveVolume: true,
 		ForceRemove:  true,
 	})
